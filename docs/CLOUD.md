@@ -204,7 +204,10 @@ Binarka na Linux (RPi CM4 / dowolny aarch64), rola:
 - Konfiguracja: zmienne środowiskowe + plik TOML, walidowane przy starcie
   (`figment` + `serde`), fail-fast przy złej konfiguracji.
 - CI: `cargo clippy -- -D warnings`, `cargo test`, `cargo deny check`,
-  build obrazów, testy integracyjne na `testcontainers`.
+  build obrazów, testy integracyjne na `testcontainers` — pełny pipeline
+  i zasady wydań w [CI.md](CI.md), zakres testów w [TESTING.md](TESTING.md).
+- Migracje wyłącznie wstecz-kompatybilne (expand/contract): w czasie rolloutu
+  stara i nowa binarka pracują na tym samym schemacie.
 
 ---
 

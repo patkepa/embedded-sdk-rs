@@ -16,6 +16,9 @@ aplikacji mobilnej (UniFFI).
 | [CLOUD.md](docs/CLOUD.md) | Stack chmurowy: ingest, serwisy, autoryzacja, deployment |
 | [DATA.md](docs/DATA.md) | Model danych, schemat bazy, retencja, zapytania |
 | [MOBILE.md](docs/MOBILE.md) | Aplikacja mobilna i rdzeń współdzielony |
+| [TESTING.md](docs/TESTING.md) | Strategia i poziomy testów, conformance, bramki |
+| [CI.md](docs/CI.md) | Pipeline'y, wydania, podpisywanie firmware, zgodność |
+| [SDK.md](docs/SDK.md) | Procedury rozwoju SDK: API, wersjonowanie, dodawanie platform |
 | [DECISIONS.md](docs/DECISIONS.md) | Log decyzji (ADR) + otwarte pytania |
 
 ## Trzy filary

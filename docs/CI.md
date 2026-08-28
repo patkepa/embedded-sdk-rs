@@ -223,7 +223,7 @@ Dobudowanie tego po fakcie jest droższe niż zrobienie od razu.
 ## 11. Kolejność wdrażania samego CI
 
 Nie budujemy całości od pierwszego dnia — kolejność wynika z etapów
-z [ARCHITECTURE.md](ARCHITECTURE.md) 8:
+z [ARCHITECTURE.md](ARCHITECTURE.md) 9:
 
 | Etap projektu | Co dokładamy do CI |
 |---|---|

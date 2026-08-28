@@ -412,6 +412,10 @@ Konsekwencje dla firmware:
 `defmt` zamiast `log` — logi kompaktowe, dekodowane po stronie hosta,
 nie zjadają flasha ani czasu.
 
+Pełna strategia — scenariusze obowiązkowe, zestaw conformance dla platform,
+testy energetyczne jako testy regresyjne i bramki blokujące merge — w
+[TESTING.md](TESTING.md).
+
 ---
 
 ## 11. Profil produktu

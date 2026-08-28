@@ -140,6 +140,7 @@ pkpu/
 │   └── pkpu-cli/             #   narzędzia operacyjne i fabryczne
 │
 ├── mobile/                   # pkpu-core (UniFFI) + shells iOS/Android
+├── .github/workflows/        # pipeline'y per workspace (patrz CI.md)
 └── docs/                     # ta dokumentacja
 ```
 
@@ -206,7 +207,24 @@ CI buduje firmware -> podpisuje ed25519 -> upload artefaktu do S3
 - **Audyt**: każda zmiana desired state, każda kampania OTA, każde claimowanie
   urządzenia -> tabela `audit_log` (append-only).
 
-## 8. Kolejność budowy
+## 8. Weryfikacja i dostarczanie
+
+Trzy dokumenty domykają cykl: [TESTING.md](TESTING.md) — co testujemy i gdzie
+(host domyślnie, sprzęt tylko tam, gdzie musi), [CI.md](CI.md) — pipeline'y,
+wydania i podpisywanie artefaktów, [SDK.md](SDK.md) — jak rozwija się wspólną
+część firmware bez rozjeżdżania kontraktu.
+
+Trzy zasady, które wiążą je z resztą architektury:
+
+- **wydanie firmware to nie rollout** — podpisany artefakt powstaje w CI,
+  wysyłka na flotę jest osobną decyzją z bramkami falowymi,
+- **port platformy kończy conformance na sprzęcie**, nie udany build,
+- **kontrakt wire jest wersjonowany osobno od crate'ów** — urządzenia w polu
+  żyją dłużej niż wydania backendu.
+
+---
+
+## 9. Kolejność budowy
 
 | Etap | Zakres | Efekt |
 |---|---|---|
