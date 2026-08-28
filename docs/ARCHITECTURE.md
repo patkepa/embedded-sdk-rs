@@ -72,11 +72,18 @@ Warstwa aplikacyjna jest **identyczna w obu ścieżkach** — patrz
 | Async runtime | `embassy` | de facto standard, `no_std`, zero-alloc, dobre wsparcie nRF/ESP/STM32 |
 | MCU (mesh/BLE) | nRF52840 / nRF5340 | najlepiej wspierany w Rust, multiprotokół |
 | MCU (Wi-Fi) | ESP32-C6 / ESP32-S3 | `esp-hal` + `esp-wifi`, Wi-Fi 6 + 802.15.4 w C6 |
+| MCU (przemysł/low-power, peryferia) | STM32 WB55 / U5 / L4 | `embassy-stm32`, szeroka dostępność, secure enclave w U5 |
 | BLE host | `trouble` | czysty Rust, integracja z embassy |
 | Thread | OpenThread jako RCP/NCP | brak dojrzałego stosu Thread w Rust — patrz ADR-004 |
 | Zigbee | stos producenta jako NCP | brak stosu Zigbee w Rust — patrz ADR-004 |
 | Storage | `sequential-storage` | log-structured KV na surowym flashu |
 | Serializacja | `postcard` | kompaktowy, `no_std`, ten sam `serde` co w chmurze |
+
+**Przenośny rdzeń SDK:** `pkpu-device-core` i logika produktowa kompilują się
+bez zmian na **wszystkie trzy** rodziny (nRF, ESP32, STM32). Krzem wybieramy per
+produkt — dostępnością, ceną i peryferiami, nie kosztem przepisania firmware.
+Różnice są zamknięte w `pkpu-platform-*` i `boards/`; kontrakt portu, macierz
+targetów i znane ograniczenia — [DEVICE.md](DEVICE.md) sekcja 4, [ADR-011](DECISIONS.md).
 
 ### Cloud
 
@@ -112,9 +119,13 @@ pkpu/
 │   └── pkpu-schema/          #   generator: JSON Schema + OpenAPI z typów Rust
 │
 ├── firmware/                 # workspace 2 — no_std, target thumbv7em / riscv32
-│   ├── pkpu-device-core/     #   maszyna stanów, scheduler telemetrii, OTA, storage
-│   ├── pkpu-link/            #   trait Link + impl: wifi, thread, zigbee, ble
-│   ├── pkpu-hal/             #   traity sprzętowe (Sensor, Actuator, PowerRail)
+│   ├── pkpu-device-core/     #   PRZENOŚNE: maszyna stanów, scheduler, OTA, storage
+│   ├── pkpu-link/            #   trait Link + impl per stos radiowy: wifi, thread, zigbee, ble
+│   ├── pkpu-hal/             #   traity sprzętowe (Sensor, Actuator, PowerRail, Platform)
+│   ├── platform/             #   NIEPRZENOŚNE: impl traitów per krzem
+│   │   ├── pkpu-platform-nrf/
+│   │   ├── pkpu-platform-stm32/
+│   │   └── pkpu-platform-esp/
 │   ├── boards/               #   BSP per płytka (pinout, clock, partycje flash)
 │   └── apps/                 #   binarki produktowe (np. apps/sensor-th/)
 │
@@ -134,6 +145,10 @@ pkpu/
 
 `proto/` jest wciągane do `firmware/` i `cloud/` przez `path = "../proto/..."`,
 nie przez rejestr. Jeden commit zmienia kontrakt i obie strony naraz.
+
+Wewnątrz `firmware/` obowiązuje ta sama zasada w pionie: wszystko powyżej
+`platform/` jest wspólne dla nRF, STM32 i ESP32. Zależność idzie tylko w dół —
+`pkpu-device-core` nie zna nazwy żadnego producenta.
 
 ## 6. Przepływy krytyczne
 
@@ -200,8 +215,11 @@ CI buduje firmware -> podpisuje ed25519 -> upload artefaktu do S3
 | 2 | `pkpu-registry` + shadow + komendy | sterowanie dwukierunkowe |
 | 3 | Provisioning BLE + `pkpu-core` mobilny | onboarding użytkownika |
 | 4 | OTA + bootloader A/B | serwisowalność w polu |
-| 5 | Thread/Zigbee + `pkpu-gateway` | urządzenia bateryjne (SLEEP) |
+| 5 | Thread/Zigbee + `pkpu-gateway` + drugi krzem (nRF52840) | urządzenia bateryjne (SLEEP), weryfikacja przenośności rdzenia |
 | 6 | Reguły, alerty, dashboard, multi-tenant | produkt |
 
 Etapy 1–4 na jednym typie urządzenia. Dopiero potem druga technologia radiowa —
 inaczej abstrakcja `Link` powstanie na podstawie zgadywania, nie doświadczenia.
+To samo dotyczy przenośności: `pkpu-hal` projektujemy tak, by port był możliwy
+(sekcja „kontrakt portu"), ale drugą rodzinę MCU realnie uruchamiamy w etapie 5.
+Trzy platformy naraz od pierwszego dnia dają abstrakcję opartą na wyobrażeniach.

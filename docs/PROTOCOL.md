@@ -42,6 +42,13 @@ pub enum ProvType { Ble = 0, Nfc = 1 }
 
 #[repr(u8)]
 pub enum DeviceState { Online = 0, Disconnected = 1, Sleeps = 2 }
+
+/// Rodzina krzemu. Rdzeń firmware jest przenośny, obraz binarny nie —
+/// to jedyne miejsce, w którym platforma przecieka do kontraktu.
+/// Używane wyłącznie do doboru artefaktu OTA i do inwentarza floty,
+/// NIGDY jako warunek w logice aplikacyjnej.
+#[repr(u8)]
+pub enum Platform { Nrf52 = 0, Nrf53 = 1, Stm32 = 2, Esp32Riscv = 3, Esp32Xtensa = 4 }
 ```
 
 `#[repr(u8)]` z jawnymi wartościami: te liczby trafiają do bazy i na radio.

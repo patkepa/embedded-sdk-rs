@@ -42,7 +42,7 @@ TLS accept
 ```
 
 Backpressure: gdy JetStream nie nadąża, ingest przestaje ACK-ować QoS 1.
-Urządzenia buforują lokalnie (patrz DEVICE.md sekcja 6). **Nigdy nie gubimy
+Urządzenia buforują lokalnie (patrz DEVICE.md sekcja 7). **Nigdy nie gubimy
 danych po cichu** — albo ACK, albo urządzenie retransmituje.
 
 ### Tematy NATS
@@ -91,7 +91,7 @@ Trzy rejestry, świadomie rozdzielone:
 | **operacyjny** | przypisanie do `tenant` / `site` / właściciela | proces claimowania |
 | **odwołań** | urządzenia zablokowane (kradzież, RMA, kompromitacja klucza) | operator |
 
-Przepływ claimowania — patrz DEVICE.md sekcja 5.1. Po stronie chmury:
+Przepływ claimowania — patrz DEVICE.md sekcja 6.1. Po stronie chmury:
 
 ```
 POST /provisioning/challenge  { device_id, nonce_device }

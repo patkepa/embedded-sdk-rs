@@ -20,9 +20,14 @@ aplikacji mobilnej (UniFFI).
 
 ## Trzy filary
 
-1. **Device Side stack** — Embassy + `no_std`, jedna baza kodu na wiele MCU i wiele radii.
+1. **Device Side stack** — Embassy + `no_std`, przenośny rdzeń SDK: ten sam kod
+   firmware na **nRF, STM32 i ESP32**, jedna baza kodu na wiele MCU i wiele radii.
 2. **Cloud stack** — Rust (axum/tokio), MQTT/NATS, PostgreSQL + TimescaleDB.
 3. **Mobile stack** — rdzeń w Rust (`pkpu-core`) + cienki UI natywny.
+
+Krzem i radio to dwie niezależne osie: `pkpu-platform-*` zmienia się wraz z MCU,
+`pkpu-link` wraz ze stosem radiowym. Rdzeń nie zna ani jednego, ani drugiego —
+szczegóły w [DEVICE.md](docs/DEVICE.md) sekcja 4 i [ADR-011](docs/DECISIONS.md).
 
 ## Zasada nadrzędna: jeden kontrakt
 

@@ -120,6 +120,41 @@ przewidywań o czterech technologiach naraz.
 
 ---
 
+## ADR-011 — Przenośny rdzeń firmware (jeden SDK na nRF, STM32 i ESP32)
+
+**Status:** proposed
+**Decyzja:** `pkpu-device-core`, `pkpu-hal`, `pkpu-link` i kod produktowy
+w `apps/` są przenośne między rodzinami MCU. Cała wiedza o krzemie mieszka
+w `pkpu-platform-{nrf,stm32,esp}` i `boards/`. Wspólnym mianownikiem jest
+`embassy` + `embedded-hal` 1.0; wybór platformy to wybór BSP i cech kompilacji.
+**Uzasadnienie:**
+- dostępność krzemu bywa decyzją narzuconą (cena, lead time, peryferium,
+  wymóg klienta) — nie może kosztować przepisania firmware,
+- Wi-Fi praktycznie prowadzi do ESP32, a 802.15.4/BLE o niskim poborze do nRF —
+  bez wspólnego rdzenia i tak mielibyśmy dwie bazy kodu w jednym produkcie,
+- ten sam zestaw traitów daje darmowo build hostowy i testy jednostkowe core'a.
+
+**Konsekwencje:**
+- (+) jedna maszyna stanów, jeden klient OTA, jeden bufor telemetrii — jeden
+  zestaw błędów do naprawienia zamiast trzech,
+- (+) port na nową rodzinę to skończona checklista (DEVICE.md sekcja 4.4),
+  nie projekt od nowa,
+- (−) związanie z ekosystemem embassy: MCU bez jego wsparcia wypada z macierzy,
+- (−) koszt stały CI: build całej macierzy targetów przy każdym PR,
+- (−) najniższy wspólny mianownik — peryferia specyficzne dla platformy
+  (CryptoCell, PKA, DS) są dostępne tylko przez trait albo wcale,
+- (−) Xtensa (ESP32-S3) wymaga forka kompilatora; dlatego domyślne są warianty
+  RISC-V (C6/C3/H2).
+
+**Nieprzenośne z premedytacją:** format obrazu i bootloader (stąd `platform`
+w manifeście OTA), mapa flasha, budżet energetyczny.
+
+**Do rozstrzygnięcia:** czy STM32 wchodzi do macierzy od początku, czy dopiero
+gdy pojawi się produkt tego wymagający. Utrzymywanie portu bez płytki na HIL
+to deklaracja przenośności, nie przenośność.
+
+---
+
 # Pytania otwarte
 
 Do rozstrzygnięcia zanim ruszy kod. Uszeregowane wpływem na architekturę.
@@ -137,6 +172,11 @@ Do rozstrzygnięcia zanim ruszy kod. Uszeregowane wpływem na architekturę.
 
 ### 3. Sprzęt
 - Czy jest już wybrana rodzina MCU, czy projektujemy od zera?
+- Które rodziny wchodzą do macierzy przenośności **od początku** (ADR-011)?
+  Każda dodana platforma to job w CI i płytka na stanowisku HIL — koszt stały,
+  nie jednorazowy.
+- Czy któryś produkt wymaga ESP32-S3 (Xtensa, fork toolchaina), czy wystarczą
+  warianty RISC-V?
 - Czy któryś produkt jest bateryjny na tyle długo (2+ lata), że budżet
   energetyczny wymusza architekturę single-chip zamiast RCP (ADR-004)?
 - Czy przewidujemy secure element, czy tożsamość w flashu MCU?
