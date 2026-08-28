@@ -1,7 +1,7 @@
 # 1. DEVICE — stack urządzenia
 
-Dokument opisuje warstwę firmware. Klasyfikacja urządzenia to iloczyn czterech
-wymiarów: **SLEEP_TYPE × COM_TYPE × PROV_TYPE × STATE**. Te same enumy żyją
+Dokument opisuje warstwę firmware. Klasyfikacja urządzenia to iloczyn pięciu
+wymiarów: **SLEEP_TYPE × COM_TYPE × PROV_TYPE × MATTER_MODE × STATE**. Te same enumy żyją
 w `pkpu-proto` i w bazie danych — patrz [PROTOCOL.md](PROTOCOL.md) i
 [DATA.md](DATA.md).
 
@@ -30,6 +30,21 @@ Konsekwencje projektowe `SLEEP`:
 | `OT_THREAD` | 802.15.4 + 6LoWPAN + IPv6 | przez Border Router | natywne IP w mesh, CoAP/DTLS |
 | `ZIGBEE` | 802.15.4 + ZCL | przez koordynator | model klastrowy, nie-IP |
 | `BLUETOOTH/BLE` | GATT | przez telefon lub gateway | również kanał provisioningu |
+
+### MATTER_MODE
+
+Relacja do ekosystemu Matter — wymiar **ortogonalny** do `COM_TYPE`, bo Matter
+jest warstwą aplikacyjną nad IPv6, a nie technologią łącza.
+
+| Wariant | Znaczenie | Koszt w firmware |
+|---|---|---|
+| `NONE` | urządzenie spoza świata Matter | zero |
+| `BRIDGED` | wystawiane przez most na gatewayu | zero — most jest po stronie gatewaya |
+| `DUAL` | własny stos Matter + nasz protokół | flash, RAM, drugi harmonogram radiowy, certyfikacja per SKU |
+| `NATIVE` | wyłącznie Matter | brak naszej telemetrii i kampanii falowych |
+
+Domyślnie `BRIDGED` lub `NONE` — uzasadnienie i pełne konsekwencje
+w [MATTER.md](MATTER.md) oraz ADR-012.
 
 ### PROV_TYPES
 
@@ -430,6 +445,12 @@ board      = "th01-rev-b"
 sleep_type = "SLEEP"
 com_type   = "OT_THREAD"
 prov_type  = ["BLE", "NFC"]
+
+[matter]
+mode        = "bridged"        # none | bridged | dual | native
+device_type = "0x0302"         # typ z biblioteki Matter, jeśli dotyczy
+vid         = "0xFFF1"         # testowy do czasu przydziału z CSA
+pid         = "0x8001"
 
 [telemetry]
 interval_s       = 600

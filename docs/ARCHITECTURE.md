@@ -42,7 +42,7 @@
 | Warstwa | Odpowiada za | NIE odpowiada za |
 |---|---|---|
 | **Device** | pomiar, lokalne sterowanie, buforowanie offline, bezpieczny boot | logikę biznesową wielu urządzeń, agregacje |
-| **Gateway** | mostkowanie radia <-> IP, backhaul offline, lokalne reguły awaryjne | trwałe przechowywanie danych, autoryzację użytkowników |
+| **Gateway** | mostkowanie radia <-> IP, backhaul offline, lokalne reguły awaryjne, most Matter | trwałe przechowywanie danych, autoryzację użytkowników |
 | **Cloud** | tożsamość, shadow, reguły, historia, OTA, API | pomiar czasu rzeczywistego (<100 ms) |
 | **Mobile** | provisioning, UI, sterowanie lokalne BLE | źródło prawdy o stanie |
 
@@ -62,6 +62,12 @@ Niski pobór mocy, mesh, ale wymaga sprzedaży/instalacji gatewaya.
 
 Warstwa aplikacyjna jest **identyczna w obu ścieżkach** — patrz
 [PROTOCOL.md](PROTOCOL.md). Różnica jest zamknięta w traicie `Link`.
+
+**Ścieżka C — ekosystem (Matter)** nie jest trzecią drogą do naszej chmury, tylko
+równoległym interfejsem sterowania lokalnego. Domyślnie realizowana jako **most
+na gatewayu**: jeden certyfikowany węzeł wystawia nasze urządzenia ekosystemom,
+a telemetria, flota i OTA nadal idą ścieżką A lub B. Patrz [MATTER.md](MATTER.md)
+i ADR-012.
 
 ## 4. Stos technologiczny — decyzje domyślne
 
@@ -136,7 +142,7 @@ pkpu/
 │   ├── pkpu-ota/             #   kampanie, rollout, manifesty
 │   ├── pkpu-rules/           #   reguły, alerty, webhooki
 │   ├── pkpu-api/             #   REST/WS dla web i mobile
-│   ├── pkpu-gateway/         #   binarka na Linux edge (RPi / CM4)
+│   ├── pkpu-gateway/         #   binarka na Linux edge (RPi / CM4) + most Matter
 │   └── pkpu-cli/             #   narzędzia operacyjne i fabryczne
 │
 ├── mobile/                   # pkpu-core (UniFFI) + shells iOS/Android

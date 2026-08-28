@@ -16,7 +16,7 @@ Każdy serwis to osobna binarka, ale współdzielą crate `pkpu-proto` i
 | `pkpu-ota` | artefakty, manifesty, kampanie, rollout falowy | niskie QPS |
 | `pkpu-rules` | ewaluacja reguł, alerty, webhooki, integracje | poziome per partycja tenanta |
 | `pkpu-api` | REST + WebSocket dla web i mobile, autoryzacja OIDC | poziome, stateless |
-| `pkpu-gateway` | binarka na edge (Linux), most PAN <-> MQTT | 1 per instalacja |
+| `pkpu-gateway` | binarka na edge (Linux), most PAN <-> MQTT, most Matter | 1 per instalacja |
 
 Świadomie **nie** zaczynamy od mikroserwisów rozdrobnionych — `registry`,
 `provisioning` i `ota` mogą początkowo być jedną binarką z trzema modułami.
@@ -192,6 +192,10 @@ Binarka na Linux (RPi CM4 / dowolny aarch64), rola:
 5. Lokalne reguły awaryjne — minimalny podzbiór `pkpu-rules`, żeby instalacja
    działała bez chmury.
 6. Sam jest urządzeniem w rejestrze: ma `device_id`, stan, OTA.
+7. **Most Matter** (ADR-012): wystawia urządzenia podsieci jako Bridged Devices
+   do fabric ekosystemów. Jeden certyfikowany węzeł zamiast certyfikacji każdego
+   SKU — patrz [MATTER.md](MATTER.md). Stos Matter jest tu procesem obok naszej
+   binarki, nie w niej.
 
 ---
 

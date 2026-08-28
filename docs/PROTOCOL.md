@@ -49,6 +49,12 @@ pub enum DeviceState { Online = 0, Disconnected = 1, Sleeps = 2 }
 /// NIGDY jako warunek w logice aplikacyjnej.
 #[repr(u8)]
 pub enum Platform { Nrf52 = 0, Nrf53 = 1, Stm32 = 2, Esp32Riscv = 3, Esp32Xtensa = 4 }
+
+/// Relacja urządzenia do ekosystemu Matter. Wymiar ORTOGONALNY do ComType:
+/// Matter jest warstwą aplikacyjną nad IPv6, nie technologią łącza.
+/// Patrz MATTER.md sekcja 4.
+#[repr(u8)]
+pub enum MatterMode { None = 0, Bridged = 1, Dual = 2, Native = 3 }
 ```
 
 `#[repr(u8)]` z jawnymi wartościami: te liczby trafiają do bazy i na radio.

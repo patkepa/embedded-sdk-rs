@@ -155,6 +155,41 @@ to deklaracja przenośności, nie przenośność.
 
 ---
 
+## ADR-012 — Matter jako powierzchnia kompatybilności, nie model wewnętrzny
+
+**Status:** proposed
+**Problem:** Matter daje integrację z ekosystemami (Apple, Google, Amazon)
+i standardowy onboarding, ale ma własny model danych, własną tożsamość, własny
+commissioning i własne OTA. Przyjęcie go jako modelu wewnętrznego oznaczałoby
+oddanie warstwy aplikacyjnej urządzenia i utratę tego, co wnosi ta platforma:
+telemetrii historycznej, kampanii falowych, multi-tenancy i audytu.
+**Decyzja:** Matter jest interfejsem **do** platformy, nie jej rdzeniem.
+Domyślny tryb to **most (bridge)** na `pkpu-gateway` — jeden certyfikowany węzeł
+wystawiający wiele naszych urządzeń. Tryb `Dual` (własny stos Matter + nasz
+protokół) tylko dla wybranych SKU konsumenckich; tryb `Native` — gdy ekosystem
+jest całą wartością produktu i platforma nie jest potrzebna.
+**Konsekwencje:**
+- (+) jedna certyfikacja zamiast certyfikacji każdego SKU,
+- (+) urządzenia bateryjne i Zigbee wchodzą do ekosystemów bez kosztu we flashu
+  i w prądzie,
+- (+) rdzeń SDK (ADR-011) pozostaje nietknięty — most żyje na gatewayu,
+- (−) most wymaga gatewaya, więc produkty `WIFI` direct-to-cloud zostają poza
+  ekosystemami albo muszą iść w `Dual`,
+- (−) urządzenia mostkowane mają w ekosystemach ograniczony zestaw funkcji,
+- (−) trzeci wyłom w ADR-001: stos Matter to C++ (`connectedhomeip`) lub SDK
+  producenta; `rs-matter` nie jest dziś bazą pod certyfikację.
+**Wiążące już teraz, przy koszcie bliskim zeru:** kanały pomiarowe definiowane
+pod jednostki i skale klastrów Matter, `MatterMode` w taksonomii, rejestr
+dopuszczający urządzenie sparowane w obcym fabric i niezaclaimowane u nas,
+`SoftwareVersion` wyprowadzalny z naszej wersji.
+**Nieodwracalne, jeśli zaniedbane:** VID, łańcuch PAA/PAI i to, co wgrywa linia
+produkcyjna. Urządzenia bez DAC-a nie da się dorobić zdalnie — patrz
+[MATTER.md](MATTER.md).
+**Do rozstrzygnięcia:** czy którykolwiek produkt w planie jest na tyle
+konsumencki, żeby uzasadnić `Dual` i pełną certyfikację per SKU.
+
+---
+
 # Pytania otwarte
 
 Do rozstrzygnięcia zanim ruszy kod. Uszeregowane wpływem na architekturę.
@@ -182,8 +217,11 @@ Do rozstrzygnięcia zanim ruszy kod. Uszeregowane wpływem na architekturę.
 - Czy przewidujemy secure element, czy tożsamość w flashu MCU?
 
 ### 4. Certyfikacja i zgodność
-- Czy planujemy certyfikację Thread / Zigbee / Matter? Matter zmieniłby
-  znacząco warstwę aplikacyjną (model klastrów zamiast własnego shadow).
+- Czy planujemy certyfikację Thread / Zigbee? Dla Matter kierunek jest wybrany
+  (ADR-012: most zamiast modelu wewnętrznego), otwarte zostaje, czy któryś
+  produkt uzasadnia tryb `Dual` i certyfikację per SKU.
+- Kiedy występujemy o VID w CSA i czy budujemy własny łańcuch PAA/PAI, czy
+  korzystamy z łańcucha dostawcy krzemu? Decyzja wyprzedza pierwszą serię.
 - CE/RED, cyberbezpieczeństwo (EN 18031 / Cyber Resilience Act) — CRA wymaga
   m.in. secure boot, aktualizacji i SBOM. Warto zaprojektować od razu.
 

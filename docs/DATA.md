@@ -40,6 +40,7 @@ CREATE TYPE com_type     AS ENUM ('WIFI','OT_THREAD','ZIGBEE','BLE');
 CREATE TYPE prov_type    AS ENUM ('BLE','NFC');
 CREATE TYPE device_state AS ENUM ('ONLINE','DISCONNECTED','SLEEPS');
 CREATE TYPE platform     AS ENUM ('NRF52','NRF53','STM32','ESP32_RISCV','ESP32_XTENSA');
+CREATE TYPE matter_mode  AS ENUM ('NONE','BRIDGED','DUAL','NATIVE');
 CREATE TYPE command_state AS ENUM ('PENDING','SENT','ACKED','REJECTED','EXPIRED');
 CREATE TYPE campaign_state AS ENUM ('DRAFT','RUNNING','PAUSED','DONE','ROLLED_BACK');
 ```
@@ -68,6 +69,9 @@ CREATE TABLE device_types (
     model            text PRIMARY KEY,          -- 'PKPU-TH-01'
     hw_rev           text NOT NULL,
     platform         platform NOT NULL,         -- rodzina MCU, decyduje o doborze artefaktu OTA
+    matter_mode      matter_mode NOT NULL DEFAULT 'NONE',
+    matter_vid       int,                       -- NULL dopóki brak przydziału z CSA
+    matter_pid       int,
     sleep_type       sleep_type NOT NULL,
     com_type         com_type   NOT NULL,
     prov_types       prov_type[] NOT NULL,
