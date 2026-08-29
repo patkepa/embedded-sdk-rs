@@ -12,19 +12,25 @@ The SDK's first Wi-Fi vertical slice provides:
   pinned `esp-radio` release.
 - Active scanning with portable results and identity-free summary reporting.
 - Open, WPA2, WPA3, and WPA2/WPA3 station configuration and association.
+- Disconnect-event monitoring and automatic reconnection with exponential
+  backoff, bounded jitter, and reset after successful association.
 - Access to the owned ESP radio controller/interfaces for the future
   `embassy-net` integration.
 
 Station association is a layer-2 operation. The current slice does not yet run
-DHCP, assign an IP address, provide DNS or sockets, or implement reconnection.
-Those functions belong in the networking layer rather than the Wi-Fi contract.
+DHCP, assign an IP address, or provide DNS or sockets. Those functions belong
+in the networking layer rather than the Wi-Fi contract.
 
 ## XIAO ESP32C6 behavior
 
 The reference firmware initializes a 72 KiB internal heap, starts the
 `esp-rtos` scheduler before the radio, enables the XIAO RF switch on GPIO3, and
 selects the on-board antenna by driving GPIO14 low. It then scans up to 20
-access points and reports only the count and strongest RSSI.
+access points and reports only the count and strongest RSSI. With station
+credentials configured, a supervisor waits for disconnect events and retries
+forever. Retry delay starts at 1 second, doubles up to a 60-second bound, adds
+up to 500 ms of hardware-random jitter within that bound, and resets after a
+successful association. The heartbeat runs independently during every delay.
 
 Run scan-only firmware:
 
@@ -75,7 +81,7 @@ policy must be defined before production deployment.
 ## Next increment
 
 The next networking increment should attach the station interface to
-`embassy-net`, run DHCPv4, expose portable link/IP/DNS state, and add bounded
-reconnection with backoff and jitter. Hardware-in-the-loop coverage should
-verify scan, association, DHCP lease acquisition, DNS, and recovery after AP
-loss without placing credentials in repository or CI logs.
+`embassy-net`, run DHCPv4, and expose portable link/IP/DNS state. Hardware-in-
+the-loop coverage should verify scan, association, DHCP lease acquisition, DNS,
+and recovery after AP loss without placing credentials in repository or CI
+logs.

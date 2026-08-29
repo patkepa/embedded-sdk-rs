@@ -15,6 +15,7 @@ The initial firmware proves:
 - Reuse of platform-neutral board and capability metadata.
 - Wi-Fi discovery through the portable SDK contract and `esp-radio` adapter.
 - Optional station association using development build credentials.
+- Disconnect monitoring and automatic association retry with bounded backoff.
 
 IP addressing and sockets, BLE, IEEE 802.15.4/OpenThread, storage, and OTA are
 not part of this bring-up.

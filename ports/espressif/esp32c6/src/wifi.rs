@@ -149,6 +149,20 @@ impl<'d> Esp32c6Wifi<'d> {
         }
     }
 
+    /// Waits until the current station association is lost.
+    pub async fn wait_for_disconnect(&mut self) -> Result<(), Error> {
+        match self.controller.wait_for_disconnect_async().await {
+            Ok(_) => {
+                self.state = WifiState::Disconnected;
+                Ok(())
+            }
+            Err(error) => {
+                self.state = WifiState::Disconnected;
+                Err(error.into())
+            }
+        }
+    }
+
     /// Releases the platform controller and interfaces for advanced networking.
     pub fn into_parts(self) -> (WifiController<'d>, Interfaces<'d>) {
         (self.controller, self.interfaces)

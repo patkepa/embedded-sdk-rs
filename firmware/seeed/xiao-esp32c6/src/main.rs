@@ -7,21 +7,22 @@ use embassy_time::{Duration, Timer};
 use embedded_sdk_board_xiao_esp32c6::HARDWARE;
 use embedded_sdk_platform_esp32c6::{start_embassy, wifi::Esp32c6Wifi};
 use embedded_sdk_wifi::{
-    Authentication, ConfigError, Passphrase, ScanSummary, Ssid, StationConfig,
+    Authentication, ConfigError, Passphrase, ReconnectBackoff, ScanSummary, Ssid, StationConfig,
 };
 use esp_backtrace as _;
 use esp_hal::gpio::{Level, Output, OutputConfig};
+use esp_hal::rng::Rng;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
 #[esp_rtos::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     let peripherals = esp_hal::init(esp_hal::Config::default());
     esp_alloc::heap_allocator!(size: 72 * 1024);
     start_embassy(peripherals.TIMG0, peripherals.SW_INTERRUPT);
 
     // The XIAO user LED is wired active-low, so High is the initial off state.
-    let mut user_led = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
+    let user_led = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
     // GPIO3 enables the RF switch and GPIO14 selects the on-board antenna.
     // Keep both outputs alive for the lifetime of the radio.
     let _rf_switch_enable = Output::new(peripherals.GPIO3, Level::Low, OutputConfig::default());
@@ -32,6 +33,10 @@ async fn main(_spawner: Spawner) {
         HARDWARE.board,
         HARDWARE.chip
     );
+    match heartbeat(user_led) {
+        Ok(task) => spawner.spawn(task),
+        Err(_) => esp_println::println!("embedded-sdk heartbeat task allocation failed"),
+    }
 
     let mut wifi = match Esp32c6Wifi::new(peripherals.WIFI) {
         Ok(wifi) => wifi,
@@ -60,16 +65,7 @@ async fn main(_spawner: Spawner) {
             if let Err(error) = wifi.configure_station(&station) {
                 esp_println::println!("embedded-sdk wifi configuration failed: {error}");
             } else {
-                match wifi.connect().await {
-                    Ok(connected) => esp_println::println!(
-                        "embedded-sdk wifi associated: channel={}, security={:?}",
-                        connected.channel,
-                        connected.security
-                    ),
-                    Err(error) => {
-                        esp_println::println!("embedded-sdk wifi association failed: {error}")
-                    }
-                }
+                supervise_station(&mut wifi).await;
             }
         }
         Ok(None) => esp_println::println!(
@@ -78,15 +74,52 @@ async fn main(_spawner: Spawner) {
         Err(error) => esp_println::println!("embedded-sdk wifi credential error: {error}"),
     }
 
+    loop {
+        Timer::after(Duration::from_secs(30)).await;
+    }
+}
+
+#[embassy_executor::task]
+async fn heartbeat(mut user_led: Output<'static>) {
     let mut heartbeat = 0_u64;
     loop {
         user_led.toggle();
-        esp_println::println!(
-            "embedded-sdk heartbeat={heartbeat}, wifi_state={:?}",
-            wifi.state()
-        );
+        esp_println::println!("embedded-sdk heartbeat={heartbeat}");
         heartbeat = heartbeat.wrapping_add(1);
         Timer::after(Duration::from_secs(1)).await;
+    }
+}
+
+async fn supervise_station(wifi: &mut Esp32c6Wifi<'_>) -> ! {
+    let rng = Rng::new();
+    let mut backoff = ReconnectBackoff::default();
+
+    loop {
+        match wifi.connect().await {
+            Ok(connected) => {
+                backoff.reset();
+                esp_println::println!(
+                    "embedded-sdk wifi associated: channel={}, security={:?}",
+                    connected.channel,
+                    connected.security
+                );
+
+                match wifi.wait_for_disconnect().await {
+                    Ok(()) => esp_println::println!("embedded-sdk wifi link lost"),
+                    Err(error) => {
+                        esp_println::println!("embedded-sdk wifi disconnect wait failed: {error}")
+                    }
+                }
+            }
+            Err(error) => esp_println::println!("embedded-sdk wifi association failed: {error}"),
+        }
+
+        let retry_delay_ms = backoff.next_delay_ms(rng.random());
+        esp_println::println!(
+            "embedded-sdk wifi retry: attempt={}, delay_ms={retry_delay_ms}",
+            backoff.attempts()
+        );
+        Timer::after(Duration::from_millis(u64::from(retry_delay_ms))).await;
     }
 }
 

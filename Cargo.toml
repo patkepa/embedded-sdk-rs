@@ -13,6 +13,7 @@ default-members = [
     "crates/core",
     "crates/config",
     "crates/runtime",
+    "crates/storage",
     "crates/telemetry",
     "crates/wifi",
     "tests/host",
@@ -31,6 +32,7 @@ embedded-sdk = { path = "crates/embedded-sdk" }
 embedded-sdk-core = { path = "crates/core" }
 embedded-sdk-config = { path = "crates/config" }
 embedded-sdk-runtime = { path = "crates/runtime" }
+embedded-sdk-storage = { path = "crates/storage" }
 embedded-sdk-telemetry = { path = "crates/telemetry" }
 embedded-sdk-wifi = { path = "crates/wifi" }
 embedded-sdk-platform-esp32c6 = { path = "ports/espressif/esp32c6" }
@@ -38,6 +40,8 @@ embedded-sdk-board-xiao-esp32c6 = { path = "boards/seeed/xiao-esp32c6" }
 
 embassy-executor = "0.10.0"
 embassy-time = "0.5.1"
+embedded-storage = "0.3.1"
+embedded-storage-async = "0.4.1"
 esp-alloc = { version = "=0.10.0", default-features = false }
 esp-backtrace = "0.19.0"
 esp-bootloader-esp-idf = "0.5.0"
@@ -45,6 +49,7 @@ esp-hal = { version = "=1.1.1", default-features = false }
 esp-println = "0.17.0"
 esp-radio = { version = "=0.18.0", default-features = false }
 esp-rtos = { version = "=0.3.0", default-features = false }
+sequential-storage = { version = "=8.0.1", default-features = false }
 zeroize = { version = "=1.9.0", default-features = false }
 
 [workspace.lints.rust]

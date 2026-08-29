@@ -8,6 +8,8 @@ pub use embedded_sdk_config as config;
 pub use embedded_sdk_core as core;
 /// Service lifecycle and health primitives.
 pub use embedded_sdk_runtime as runtime;
+/// Persistent key-value and raw flash storage contracts.
+pub use embedded_sdk_storage as storage;
 /// Backend-independent telemetry events.
 pub use embedded_sdk_telemetry as telemetry;
 /// Portable Wi-Fi configuration, discovery, and connection contracts.

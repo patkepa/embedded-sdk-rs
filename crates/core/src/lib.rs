@@ -41,6 +41,8 @@ impl Capabilities {
     pub const USB: Self = Self(1 << 6);
     /// Over-the-air firmware update support.
     pub const OTA: Self = Self(1 << 7);
+    /// Persistent storage available to application services.
+    pub const PERSISTENT_STORAGE: Self = Self(1 << 8);
 
     /// Creates a capability set from its stable wire representation.
     #[must_use]

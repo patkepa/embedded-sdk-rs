@@ -525,6 +525,7 @@ dependencies = [
  "embedded-sdk-config",
  "embedded-sdk-core",
  "embedded-sdk-runtime",
+ "embedded-sdk-storage",
  "embedded-sdk-telemetry",
  "embedded-sdk-wifi",
 ]
@@ -567,6 +568,16 @@ dependencies = [
 [[package]]
 name = "embedded-sdk-runtime"
 version = "0.1.0"
+
+[[package]]
+name = "embedded-sdk-storage"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embedded-storage",
+ "embedded-storage-async",
+ "sequential-storage",
+]
 
 [[package]]
 name = "embedded-sdk-telemetry"
@@ -1480,6 +1491,15 @@ name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
+
+[[package]]
+name = "sequential-storage"
+version = "8.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e750f14f4f6e5a81277c66311713a56106c8df0196df62a634d1fc806556832b"
+dependencies = [
+ "embedded-storage-async",
+]
 
 [[package]]
 name = "serde"

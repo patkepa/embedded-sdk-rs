@@ -20,6 +20,8 @@ pub enum ConfigError {
     SsidTooLong,
     /// A WPA passphrase must be 8 through 63 bytes, or a 64-digit hexadecimal PSK.
     InvalidPassphrase,
+    /// Reconnection delays must be non-zero, ordered, and keep jitter below the maximum.
+    InvalidReconnectPolicy,
 }
 
 impl fmt::Display for ConfigError {
@@ -29,6 +31,8 @@ impl fmt::Display for ConfigError {
             Self::SsidTooLong => formatter.write_str("SSID exceeds 32 bytes"),
             Self::InvalidPassphrase => formatter
                 .write_str("WPA passphrase must be 8-63 bytes, or a 64-digit hexadecimal PSK"),
+            Self::InvalidReconnectPolicy => formatter
+                .write_str("reconnect policy requires 0 < initial <= maximum and jitter < maximum"),
         }
     }
 }
@@ -330,13 +334,125 @@ pub enum WifiState {
     Failed,
 }
 
+/// Bounds for exponential station-reconnection delay and random jitter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReconnectPolicy {
+    initial_delay_ms: u32,
+    maximum_delay_ms: u32,
+    maximum_jitter_ms: u32,
+}
+
+impl ReconnectPolicy {
+    /// Validates a reconnection policy.
+    ///
+    /// `maximum_delay_ms` bounds the complete delay, including jitter.
+    pub const fn new(
+        initial_delay_ms: u32,
+        maximum_delay_ms: u32,
+        maximum_jitter_ms: u32,
+    ) -> Result<Self, ConfigError> {
+        if initial_delay_ms == 0
+            || initial_delay_ms > maximum_delay_ms
+            || maximum_jitter_ms >= maximum_delay_ms
+        {
+            return Err(ConfigError::InvalidReconnectPolicy);
+        }
+
+        Ok(Self {
+            initial_delay_ms,
+            maximum_delay_ms,
+            maximum_jitter_ms,
+        })
+    }
+
+    /// Initial base delay before the first retry.
+    pub const fn initial_delay_ms(&self) -> u32 {
+        self.initial_delay_ms
+    }
+
+    /// Maximum complete delay, including jitter.
+    pub const fn maximum_delay_ms(&self) -> u32 {
+        self.maximum_delay_ms
+    }
+
+    /// Maximum random jitter added to a base delay.
+    pub const fn maximum_jitter_ms(&self) -> u32 {
+        self.maximum_jitter_ms
+    }
+}
+
+impl Default for ReconnectPolicy {
+    fn default() -> Self {
+        Self {
+            initial_delay_ms: 1_000,
+            maximum_delay_ms: 60_000,
+            maximum_jitter_ms: 500,
+        }
+    }
+}
+
+/// Stateful exponential-backoff calculator for station reconnection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReconnectBackoff {
+    policy: ReconnectPolicy,
+    next_base_delay_ms: u32,
+    attempts: u32,
+}
+
+impl ReconnectBackoff {
+    /// Creates a backoff calculator at its first-attempt state.
+    pub const fn new(policy: ReconnectPolicy) -> Self {
+        Self {
+            next_base_delay_ms: policy.initial_delay_ms,
+            policy,
+            attempts: 0,
+        }
+    }
+
+    /// Returns the next bounded delay using caller-supplied random entropy.
+    pub fn next_delay_ms(&mut self, entropy: u32) -> u32 {
+        let maximum_base = self
+            .policy
+            .maximum_delay_ms
+            .saturating_sub(self.policy.maximum_jitter_ms);
+        let base = self.next_base_delay_ms.min(maximum_base);
+        let jitter = if self.policy.maximum_jitter_ms == 0 {
+            0
+        } else {
+            entropy % (self.policy.maximum_jitter_ms + 1)
+        };
+
+        self.next_base_delay_ms = base.saturating_mul(2).min(maximum_base);
+        self.attempts = self.attempts.saturating_add(1);
+        base.saturating_add(jitter)
+            .min(self.policy.maximum_delay_ms)
+    }
+
+    /// Resets the sequence after a successful association.
+    pub fn reset(&mut self) {
+        self.next_base_delay_ms = self.policy.initial_delay_ms;
+        self.attempts = 0;
+    }
+
+    /// Number of retry delays issued since construction or reset.
+    pub const fn attempts(&self) -> u32 {
+        self.attempts
+    }
+}
+
+impl Default for ReconnectBackoff {
+    fn default() -> Self {
+        Self::new(ReconnectPolicy::default())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
 
     use super::{
-        AccessPoint, Authentication, ConfigError, Passphrase, ScanSummary, Security, Ssid,
-        StationConfig,
+        AccessPoint, Authentication, ConfigError, Passphrase, ReconnectBackoff, ReconnectPolicy,
+        ScanSummary, Security, Ssid, StationConfig,
     };
 
     #[test]
@@ -392,6 +508,38 @@ mod tests {
                 access_points: 2,
                 strongest_signal_dbm: Some(-48),
             }
+        );
+    }
+
+    #[test]
+    fn reconnect_backoff_is_exponential_bounded_and_resettable() {
+        let policy = ReconnectPolicy::new(1_000, 5_000, 500).unwrap();
+        let mut backoff = ReconnectBackoff::new(policy);
+
+        assert_eq!(backoff.next_delay_ms(250), 1_250);
+        assert_eq!(backoff.next_delay_ms(0), 2_000);
+        assert_eq!(backoff.next_delay_ms(500), 4_500);
+        assert_eq!(backoff.next_delay_ms(500), 5_000);
+        assert_eq!(backoff.attempts(), 4);
+
+        backoff.reset();
+        assert_eq!(backoff.attempts(), 0);
+        assert_eq!(backoff.next_delay_ms(0), 1_000);
+    }
+
+    #[test]
+    fn reconnect_policy_rejects_invalid_bounds() {
+        assert_eq!(
+            ReconnectPolicy::new(0, 1_000, 0),
+            Err(ConfigError::InvalidReconnectPolicy)
+        );
+        assert_eq!(
+            ReconnectPolicy::new(2_000, 1_000, 0),
+            Err(ConfigError::InvalidReconnectPolicy)
+        );
+        assert_eq!(
+            ReconnectPolicy::new(1_000, 1_000, 1_000),
+            Err(ConfigError::InvalidReconnectPolicy)
         );
     }
 }
