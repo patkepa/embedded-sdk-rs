@@ -5,6 +5,7 @@ mod tests {
     use embedded_sdk::{
         config::SchemaVersion,
         core::Capabilities,
+        storage::Key,
         wifi::{Authentication, Passphrase, Ssid, StationConfig},
     };
     use embedded_sdk_board_xiao_esp32c6::HARDWARE;
@@ -34,5 +35,13 @@ mod tests {
         .unwrap();
 
         assert_eq!(station.ssid().as_str(), Some("test-network"));
+    }
+
+    #[test]
+    fn facade_exposes_stable_namespaced_storage_keys() {
+        let key = Key::new(0x0100, 0x0002);
+
+        assert_eq!(key.to_raw(), 0x0100_0002);
+        assert_eq!(Key::from_raw(key.to_raw()), key);
     }
 }
