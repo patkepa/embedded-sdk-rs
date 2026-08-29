@@ -12,7 +12,7 @@ embedded-sdk-config.workspace = true
 embedded-sdk-core.workspace = true
 embedded-sdk-runtime.workspace = true
 embedded-sdk-telemetry.workspace = true
+embedded-sdk-wifi.workspace = true
 
 [lints]
 workspace = true
-

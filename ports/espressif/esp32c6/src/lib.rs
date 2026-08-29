@@ -17,6 +17,10 @@ pub const CAPABILITIES: Capabilities = Capabilities::WIFI
     .union(Capabilities::HARDWARE_RNG)
     .union(Capabilities::CRYPTO_ACCELERATION);
 
+/// ESP32-C6 implementation of the portable Wi-Fi contracts.
+#[cfg(target_arch = "riscv32")]
+pub mod wifi;
+
 /// Initializes the Embassy executor and time driver on ESP32-C6.
 ///
 /// The caller owns chip initialization and passes the two peripheral tokens

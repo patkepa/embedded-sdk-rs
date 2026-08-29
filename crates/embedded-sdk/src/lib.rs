@@ -10,3 +10,5 @@ pub use embedded_sdk_core as core;
 pub use embedded_sdk_runtime as runtime;
 /// Backend-independent telemetry events.
 pub use embedded_sdk_telemetry as telemetry;
+/// Portable Wi-Fi configuration, discovery, and connection contracts.
+pub use embedded_sdk_wifi as wifi;

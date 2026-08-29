@@ -9,11 +9,17 @@ repository.workspace = true
 
 [dependencies]
 embedded-sdk-core.workspace = true
+embedded-sdk-wifi.workspace = true
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 esp-hal = { workspace = true, features = ["esp32c6", "requires-unstable"] }
-esp-rtos = { workspace = true, features = ["embassy", "esp32c6"] }
+esp-radio = { workspace = true, features = ["esp-alloc", "esp32c6", "wifi"] }
+esp-rtos = { workspace = true, features = [
+    "embassy",
+    "esp-alloc",
+    "esp-radio",
+    "esp32c6",
+] }
 
 [lints]
 workspace = true
-

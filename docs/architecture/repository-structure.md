@@ -57,6 +57,7 @@ embedded-sdk-rs/
 │   ├── storage/                  # Key-value, blob, and flash abstractions
 │   ├── security/                 # Identity, credentials, crypto abstractions
 │   ├── telemetry/                # Logs, metrics, traces, crash records
+│   ├── wifi/                     # Portable Wi-Fi contracts (implemented)
 │   ├── provisioning/             # Factory and field provisioning
 │   ├── ota/                      # Update state machine and rollback policy
 │   │
@@ -158,6 +159,13 @@ embedded-sdk-rs/
 This tree describes the intended destination. Directories should be introduced
 when they gain an owned, tested component; empty placeholder crates should not
 be created merely to mirror the design.
+
+The first implemented connectivity slice uses a flat `crates/wifi` package
+while it remains focused. The portable package owns bounded SSID and credential
+types, discovery records, and lifecycle state. The ESP32-C6 implementation
+lives in `ports/espressif/esp32c6::wifi`; the firmware owns allocator setup,
+board RF-switch pins, credentials, and task policy. The portable crate does not
+depend on `esp-hal` or `esp-radio`.
 
 ## Dependency Architecture
 
