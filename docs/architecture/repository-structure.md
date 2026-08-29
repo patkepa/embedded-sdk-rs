@@ -113,7 +113,7 @@ embedded-sdk-rs/
 │   ├── nrf5340-dk/
 │   ├── stm32h7-nucleo/
 │   ├── rp-pico-w/
-│   └── esp32c6-devkit/
+│   └── xiao-esp32c6/
 │
 ├── firmware/                     # Products and reference applications
 │   ├── connected-sensor/

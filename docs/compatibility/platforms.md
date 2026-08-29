@@ -1,0 +1,14 @@
+# Platform Compatibility
+
+| Board | Chip | Target | Tier | Host build | Firmware build | HIL |
+| --- | --- | --- | --- | --- | --- | --- |
+| Seeed Studio XIAO ESP32C6 | ESP32-C6 | `riscv32imac-unknown-none-elf` | 2 | Yes | Yes | Planned |
+
+## Tier definitions
+
+- Tier 1: release-gating hardware tests and documented product support.
+- Tier 2: continuous compile coverage and periodic hardware validation.
+- Tier 3: best-effort community support.
+
+Capabilities not listed as implemented in a board's porting guide must not be
+inferred from the chip's radio or peripheral hardware alone.

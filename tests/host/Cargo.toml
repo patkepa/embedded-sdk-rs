@@ -1,0 +1,16 @@
+[package]
+name = "embedded-sdk-host-tests"
+description = "Cross-crate host integration tests for embedded-sdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+embedded-sdk.workspace = true
+embedded-sdk-board-xiao-esp32c6.workspace = true
+
+[lints]
+workspace = true

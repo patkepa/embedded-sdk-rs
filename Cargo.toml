@@ -1,10 +1,63 @@
-[package]
-name = "embedded-sdk"
+[workspace]
+resolver = "3"
+members = [
+    "crates/*",
+    "ports/espressif/*",
+    "boards/seeed/*",
+    "firmware/seeed/*",
+    "tests/host",
+    "tools/xtask",
+]
+default-members = [
+    "crates/embedded-sdk",
+    "crates/core",
+    "crates/config",
+    "crates/runtime",
+    "crates/telemetry",
+    "tests/host",
+    "tools/xtask",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-description = "A minimal Rust SDK for embedded devices"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/patkepa/embedded-sdk-rs"
 
-[lib]
-path = "src/lib.rs"
+[workspace.dependencies]
+embedded-sdk = { path = "crates/embedded-sdk" }
+embedded-sdk-core = { path = "crates/core" }
+embedded-sdk-config = { path = "crates/config" }
+embedded-sdk-runtime = { path = "crates/runtime" }
+embedded-sdk-telemetry = { path = "crates/telemetry" }
+embedded-sdk-platform-esp32c6 = { path = "ports/espressif/esp32c6" }
+embedded-sdk-board-xiao-esp32c6 = { path = "boards/seeed/xiao-esp32c6" }
 
+embassy-executor = "0.10.0"
+embassy-time = "0.5.1"
+esp-backtrace = "0.19.0"
+esp-bootloader-esp-idf = "0.5.0"
+esp-hal = { version = "=1.1.1", default-features = false }
+esp-println = "0.17.0"
+esp-rtos = { version = "=0.3.0", default-features = false }
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "warn"
+undocumented_unsafe_blocks = "deny"
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+codegen-units = 1
+debug = 2
+debug-assertions = true
+lto = "fat"
+opt-level = "s"
+overflow-checks = true
