@@ -1,0 +1,12 @@
+[package]
+name = "embedded-sdk-core"
+description = "Platform-neutral types and capability model for embedded-sdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+

@@ -1,0 +1,33 @@
+[package]
+name = "embedded-sdk-platform-esp32c6"
+description = "ESP32-C6 platform integration for embedded-sdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+embedded-sdk-bluetooth.workspace = true
+embedded-sdk-core.workspace = true
+embedded-sdk-wifi.workspace = true
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+esp-hal = { workspace = true, features = ["esp32c6", "requires-unstable"] }
+esp-radio = { workspace = true, features = [
+    "ble",
+    "coex",
+    "esp-alloc",
+    "esp32c6",
+    "unstable",
+    "wifi",
+] }
+esp-rtos = { workspace = true, features = [
+    "embassy",
+    "esp-alloc",
+    "esp-radio",
+    "esp32c6",
+] }
+
+[lints]
+workspace = true

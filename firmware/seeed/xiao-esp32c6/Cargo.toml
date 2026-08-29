@@ -1,0 +1,53 @@
+[package]
+name = "xiao-esp32c6-firmware"
+description = "Reference Embassy firmware for Seeed Studio XIAO ESP32C6"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "xiao-esp32c6-firmware"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+embassy-executor.workspace = true
+embassy-futures.workspace = true
+embassy-sync.workspace = true
+embassy-time.workspace = true
+embedded-sdk-board-xiao-esp32c6.workspace = true
+embedded-sdk-bluetooth.workspace = true
+embedded-sdk-platform-esp32c6.workspace = true
+embedded-sdk-wifi.workspace = true
+esp-alloc = { workspace = true, features = ["compat", "esp32c6", "global-allocator"] }
+esp-backtrace = { workspace = true, features = ["esp32c6", "panic-handler", "println"] }
+esp-bootloader-esp-idf = { workspace = true, features = ["esp32c6"] }
+esp-hal = { workspace = true, features = [
+    "esp32c6",
+    "exception-handler",
+    "rt",
+    "unstable",
+] }
+esp-println = { workspace = true, features = ["esp32c6"] }
+esp-rtos = { workspace = true, features = [
+    "embassy",
+    "esp-alloc",
+    "esp-radio",
+    "esp32c6",
+] }
+static_cell.workspace = true
+trouble-host = { workspace = true, features = [
+    "default-packet-pool",
+    "default-packet-pool-mtu-64",
+    "default-packet-pool-size-8",
+    "derive",
+    "gatt",
+    "peripheral",
+] }
+
+[lints]
+workspace = true

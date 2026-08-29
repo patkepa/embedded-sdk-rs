@@ -1,0 +1,19 @@
+[package]
+name = "embedded-sdk-storage"
+description = "Portable persistent storage contracts and flash-backed key-value storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+embedded-storage.workspace = true
+embedded-storage-async.workspace = true
+sequential-storage.workspace = true
+
+[dev-dependencies]
+embassy-futures = "0.1.2"
+
+[lints]
+workspace = true

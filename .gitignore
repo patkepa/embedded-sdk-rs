@@ -1,0 +1,4 @@
+/target/
+.DS_Store
+*.elf
+*.bin
