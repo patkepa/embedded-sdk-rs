@@ -18,8 +18,10 @@ docs/         architecture, porting, and support documentation
 See [Repository Architecture](docs/architecture/repository-structure.md) for
 the intended long-term structure and dependency rules.
 
+802.15.4/OpenThread, cloud connectivity, board-specific storage backends, and
+OTA remain planned.
 
-802.15.4/OpenThread, cloud connectivity, storage, and OTA remain planned.
+Portable persistence is described in the [Storage Guide](docs/storage.md).
 
 ## License
 
