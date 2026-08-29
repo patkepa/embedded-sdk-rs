@@ -16,9 +16,12 @@ The initial firmware proves:
 - Wi-Fi discovery through the portable SDK contract and `esp-radio` adapter.
 - Optional station association using development build credentials.
 - Disconnect monitoring and automatic association retry with bounded backoff.
+- Connectable BLE advertising and a reference GATT status service through
+  TrouBLE.
+- Concurrent Wi-Fi/BLE radio operation through Espressif coexistence support.
 
-IP addressing and sockets, BLE, IEEE 802.15.4/OpenThread, storage, and OTA are
-not part of this bring-up.
+IP addressing and sockets, secure BLE provisioning and bonding, IEEE
+802.15.4/OpenThread, and OTA are not part of this bring-up.
 
 ## Toolchain
 
@@ -58,9 +61,10 @@ cargo xtask run-xiao-esp32c6
 ```
 
 The target runner invokes `espflash flash --monitor`. The firmware prints its
-board and chip identity, performs one Wi-Fi scan, then toggles the user LED and
-prints a heartbeat every second. Scan logs intentionally contain only the AP
-count and strongest signal; they do not reveal nearby SSIDs or BSSIDs.
+board and chip identity, starts the `XIAO ESP32C6 SDK` BLE peripheral, performs
+one Wi-Fi scan, then toggles the user LED and prints a heartbeat every second.
+Scan logs intentionally contain only the AP count and strongest signal; they do
+not reveal nearby SSIDs or BSSIDs. Bluetooth logs omit local and peer addresses.
 
 For development-only association with a WPA2/WPA3 network:
 
@@ -74,8 +78,8 @@ security and networking boundaries of this mechanism.
 
 ## Ownership boundaries
 
-- `ports/espressif/esp32c6` integrates ESP32-C6 runtime and Wi-Fi primitives
-  with the portable SDK contracts.
+- `ports/espressif/esp32c6` integrates ESP32-C6 runtime, Wi-Fi primitives, and
+  the BLE controller with the portable SDK contracts.
 - `boards/seeed/xiao-esp32c6` defines physical-board identity and
   board-specific constants.
 - `firmware/seeed/xiao-esp32c6` owns chip initialization, peripheral
@@ -85,9 +89,10 @@ The firmware drives the XIAO user LED on GPIO15 and deliberately passes `TIMG0`
 and `SW_INTERRUPT` to the platform runtime explicitly. Platform code must not
 acquire peripheral singletons behind the application's back.
 
-Wi-Fi additionally reserves GPIO3 to enable the XIAO RF switch and drives
+Wireless operation reserves GPIO3 to enable the XIAO RF switch and drives
 GPIO14 low to select the on-board antenna. The firmware owns and retains both
-outputs for as long as the radio is active.
+outputs for as long as Wi-Fi or BLE is active. The port enables `esp-radio`
+coexistence so both protocols can run concurrently.
 
 ## Dependency baseline
 
@@ -100,6 +105,7 @@ The initial target pins the stable Espressif release family:
 - `esp-bootloader-esp-idf` 0.5.0
 - `esp-radio` 0.18.0
 - `esp-alloc` 0.10.0
+- `trouble-host` 0.6.0
 
 These versions remain centralized in the workspace manifest. Platform-specific
 dependencies must not be added to portable crates.
@@ -109,6 +115,6 @@ dependencies must not be added to portable crates.
 1. Establish an ESP32-C6 hardware-in-the-loop fixture.
 2. Add GPIO and board-revision tests.
 3. Add `embassy-net` DHCP, DNS, and sockets on the implemented Wi-Fi link.
-4. Add BLE provisioning using a controller/host boundary.
+4. Add authenticated BLE provisioning and persistent bonding.
 5. Add IEEE 802.15.4 and isolate OpenThread FFI behind its platform layer.
 6. Define flash partitions before persistent configuration or OTA is added.

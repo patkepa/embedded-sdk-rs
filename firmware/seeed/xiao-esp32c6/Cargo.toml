@@ -16,8 +16,11 @@ bench = false
 
 [dependencies]
 embassy-executor.workspace = true
+embassy-futures.workspace = true
+embassy-sync.workspace = true
 embassy-time.workspace = true
 embedded-sdk-board-xiao-esp32c6.workspace = true
+embedded-sdk-bluetooth.workspace = true
 embedded-sdk-platform-esp32c6.workspace = true
 embedded-sdk-wifi.workspace = true
 esp-alloc = { workspace = true, features = ["compat", "esp32c6", "global-allocator"] }
@@ -35,6 +38,15 @@ esp-rtos = { workspace = true, features = [
     "esp-alloc",
     "esp-radio",
     "esp32c6",
+] }
+static_cell.workspace = true
+trouble-host = { workspace = true, features = [
+    "default-packet-pool",
+    "default-packet-pool-mtu-64",
+    "default-packet-pool-size-8",
+    "derive",
+    "gatt",
+    "peripheral",
 ] }
 
 [lints]

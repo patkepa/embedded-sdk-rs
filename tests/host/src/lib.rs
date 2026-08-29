@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod tests {
     use embedded_sdk::{
+        bluetooth::{DeviceName, StaticRandomAddress},
         config::SchemaVersion,
         core::Capabilities,
         storage::Key,
@@ -15,6 +16,7 @@ mod tests {
         assert_eq!(HARDWARE.board, "xiao-esp32c6");
         assert_eq!(HARDWARE.chip, "esp32c6");
         assert!(HARDWARE.capabilities.contains(Capabilities::WIFI));
+        assert!(HARDWARE.capabilities.contains(Capabilities::BLE));
     }
 
     #[test]
@@ -35,6 +37,15 @@ mod tests {
         .unwrap();
 
         assert_eq!(station.ssid().as_str(), Some("test-network"));
+    }
+
+    #[test]
+    fn facade_exposes_portable_bluetooth_configuration() {
+        let name = DeviceName::new("test-device").unwrap();
+        let address = StaticRandomAddress::from_seed([1, 2, 3, 4, 5, 6]);
+
+        assert_eq!(name.as_str(), "test-device");
+        assert_eq!(address.as_bytes()[0] & 0xc0, 0xc0);
     }
 
     #[test]

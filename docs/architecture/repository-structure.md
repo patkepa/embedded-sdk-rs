@@ -160,12 +160,15 @@ This tree describes the intended destination. Directories should be introduced
 when they gain an owned, tested component; empty placeholder crates should not
 be created merely to mirror the design.
 
-The first implemented connectivity slice uses a flat `crates/wifi` package
-while it remains focused. The portable package owns bounded SSID and credential
-types, discovery records, and lifecycle state. The ESP32-C6 implementation
-lives in `ports/espressif/esp32c6::wifi`; the firmware owns allocator setup,
-board RF-switch pins, credentials, and task policy. The portable crate does not
-depend on `esp-hal` or `esp-radio`.
+The first implemented connectivity slices use flat `crates/wifi` and
+`crates/bluetooth` packages while they remain focused. The portable Wi-Fi
+package owns bounded SSID and credential types, discovery records, and lifecycle
+state. The portable Bluetooth package owns bounded GAP identity, static-random
+address, peripheral configuration, and lifecycle types. ESP32-C6 controller
+implementations live in `ports/espressif/esp32c6`; the firmware owns allocator
+setup, board RF-switch pins, credentials, host-stack composition, and task
+policy. Portable connectivity crates do not depend on `esp-hal`, `esp-radio`,
+or TrouBLE.
 
 ## Dependency Architecture
 
@@ -306,10 +309,12 @@ single lowest-common-denominator interface.
 
 ### Bluetooth
 
-The preferred structure separates reusable application-facing GATT services
-from the host stack and controller adapter. A TrouBLE-based integration belongs
-in `wireless/ble-trouble`, while controller selection belongs to the platform or
-board package.
+The preferred mature structure separates reusable application-facing GATT
+services from the host stack and controller adapter. A reusable TrouBLE-based
+integration belongs in `wireless/ble-trouble`, while controller selection
+belongs to the platform or board package. The initial XIAO bring-up composes
+TrouBLE directly in reference firmware until a reusable service boundary is
+introduced.
 
 ### OpenThread
 

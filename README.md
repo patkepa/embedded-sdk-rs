@@ -18,6 +18,12 @@ docs/         architecture, porting, and support documentation
 See [Repository Architecture](docs/architecture/repository-structure.md) for
 the intended long-term structure and dependency rules.
 
+Wi-Fi station operation and Bluetooth Low Energy peripheral operation are
+implemented on the Seeed Studio XIAO ESP32C6 reference target. See the
+[Wi-Fi](docs/connectivity/wifi.md) and
+[Bluetooth](docs/connectivity/bluetooth.md) guides for their current support
+boundaries.
+
 802.15.4/OpenThread, cloud connectivity, board-specific storage backends, and
 OTA remain planned.
 

@@ -21,6 +21,9 @@ impl BoardSupport for XiaoEsp32c6 {
 /// Static descriptor for the XIAO ESP32C6.
 pub const HARDWARE: HardwareDescriptor = XiaoEsp32c6::HARDWARE;
 
+/// Default BLE GAP name used by the reference firmware.
+pub const BLUETOOTH_DEVICE_NAME: &str = "XIAO ESP32C6 SDK";
+
 /// On-board yellow user LED.
 pub const USER_LED_GPIO: u8 = 15;
 /// Boot button, active low when pressed.
@@ -56,7 +59,7 @@ pub const RF_SWITCH_SELECT_GPIO: u8 = 14;
 mod tests {
     use embedded_sdk_core::Capabilities;
 
-    use super::{HARDWARE, I2C_SCL_GPIO, I2C_SDA_GPIO, USER_LED_GPIO};
+    use super::{BLUETOOTH_DEVICE_NAME, HARDWARE, I2C_SCL_GPIO, I2C_SDA_GPIO, USER_LED_GPIO};
 
     #[test]
     fn board_exposes_esp32c6_radios() {
@@ -69,5 +72,10 @@ mod tests {
     fn board_pin_contract_matches_xiao() {
         assert_eq!(USER_LED_GPIO, 15);
         assert_eq!((I2C_SDA_GPIO, I2C_SCL_GPIO), (22, 23));
+    }
+
+    #[test]
+    fn board_bluetooth_name_fits_legacy_gap_data() {
+        assert!(BLUETOOTH_DEVICE_NAME.len() <= embedded_sdk_bluetooth::MAX_DEVICE_NAME_LEN);
     }
 }

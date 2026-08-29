@@ -21,6 +21,10 @@ pub const CAPABILITIES: Capabilities = Capabilities::WIFI
 #[cfg(target_arch = "riscv32")]
 pub mod wifi;
 
+/// ESP32-C6 Bluetooth Low Energy controller adapter.
+#[cfg(target_arch = "riscv32")]
+pub mod bluetooth;
+
 /// Initializes the Embassy executor and time driver on ESP32-C6.
 ///
 /// The caller owns chip initialization and passes the two peripheral tokens

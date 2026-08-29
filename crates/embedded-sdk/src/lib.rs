@@ -2,6 +2,8 @@
 #![forbid(unsafe_code)]
 #![doc = "Convenience facade for the portable embedded SDK crates."]
 
+/// Portable Bluetooth Low Energy identity and lifecycle contracts.
+pub use embedded_sdk_bluetooth as bluetooth;
 /// Configuration versioning and validation.
 pub use embedded_sdk_config as config;
 /// Hardware identity and capability types.

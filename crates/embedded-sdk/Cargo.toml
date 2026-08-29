@@ -8,6 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+embedded-sdk-bluetooth.workspace = true
 embedded-sdk-config.workspace = true
 embedded-sdk-core.workspace = true
 embedded-sdk-runtime.workspace = true

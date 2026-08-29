@@ -10,6 +10,7 @@ members = [
 ]
 default-members = [
     "crates/embedded-sdk",
+    "crates/bluetooth",
     "crates/core",
     "crates/config",
     "crates/runtime",
@@ -29,6 +30,7 @@ repository = "https://github.com/patkepa/embedded-sdk-rs"
 
 [workspace.dependencies]
 embedded-sdk = { path = "crates/embedded-sdk" }
+embedded-sdk-bluetooth = { path = "crates/bluetooth" }
 embedded-sdk-core = { path = "crates/core" }
 embedded-sdk-config = { path = "crates/config" }
 embedded-sdk-runtime = { path = "crates/runtime" }
@@ -39,6 +41,8 @@ embedded-sdk-platform-esp32c6 = { path = "ports/espressif/esp32c6" }
 embedded-sdk-board-xiao-esp32c6 = { path = "boards/seeed/xiao-esp32c6" }
 
 embassy-executor = "0.10.0"
+embassy-futures = "0.1.2"
+embassy-sync = "0.7.2"
 embassy-time = "0.5.1"
 embedded-storage = "0.3.1"
 embedded-storage-async = "0.4.1"
@@ -50,6 +54,8 @@ esp-println = "0.17.0"
 esp-radio = { version = "=0.18.0", default-features = false }
 esp-rtos = { version = "=0.3.0", default-features = false }
 sequential-storage = { version = "=8.0.1", default-features = false }
+static_cell = "2.1.1"
+trouble-host = { version = "=0.6.0", default-features = false }
 zeroize = { version = "=1.9.0", default-features = false }
 
 [workspace.lints.rust]

@@ -1,8 +1,8 @@
 # Platform Compatibility
 
-| Board | Chip | Target | Tier | Host build | Firmware build | Wi-Fi | HIL |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Seeed Studio XIAO ESP32C6 | ESP32-C6 | `riscv32imac-unknown-none-elf` | 2 | Yes | Yes | Scan and station association | Planned |
+| Board | Chip | Target | Tier | Host build | Firmware build | Wi-Fi | Bluetooth LE | HIL |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Seeed Studio XIAO ESP32C6 | ESP32-C6 | `riscv32imac-unknown-none-elf` | 2 | Yes | Yes | Scan and station association | Connectable GATT peripheral | Planned |
 
 ## Tier definitions
 
