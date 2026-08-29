@@ -3,11 +3,6 @@
 An Embassy-first, `no_std` Rust workspace for building connected embedded
 devices across hardware platforms.
 
-The first supported target is the Seeed Studio XIAO ESP32C6. The current
-foundation includes portable identity, capability, configuration, service
-health, telemetry, and Wi-Fi contracts; an ESP32-C6 Wi-Fi platform adapter;
-board metadata; host integration tests; and runnable Embassy firmware.
-
 ## Repository layout
 
 ```text
@@ -23,55 +18,7 @@ docs/         architecture, porting, and support documentation
 See [Repository Architecture](docs/architecture/repository-structure.md) for
 the intended long-term structure and dependency rules.
 
-## Host development
 
-Run all host-side checks:
-
-```sh
-cargo xtask check
-```
-
-Run only tests:
-
-```sh
-cargo xtask test
-```
-
-## ESP32-C6
-
-Verify the local toolchain:
-
-```sh
-cargo xtask doctor
-```
-
-Build the reference firmware:
-
-```sh
-cargo xtask build-xiao-esp32c6
-```
-
-Flash a connected XIAO ESP32C6 and open its serial monitor:
-
-```sh
-cargo xtask run-xiao-esp32c6
-```
-
-The firmware always performs a Wi-Fi scan and reports an identity-free summary.
-For development-only station association, provide credentials at build time:
-
-```sh
-WIFI_SSID='network' WIFI_PASSWORD='passphrase' cargo xtask run-xiao-esp32c6
-```
-
-Detailed setup and design notes are in the
-[ESP32-C6 porting guide](docs/porting/esp32c6.md) and
-[Wi-Fi guide](docs/connectivity/wifi.md).
-
-## Project status
-
-The workspace foundation, ESP32-C6 Embassy bring-up, Wi-Fi discovery, and
-optional station association are implemented. IP networking, BLE, IEEE
 802.15.4/OpenThread, cloud connectivity, storage, and OTA remain planned.
 
 ## License
