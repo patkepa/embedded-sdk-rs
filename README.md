@@ -6,21 +6,24 @@ Architektura referencyjna dla przyszłych projektów IoT. Cały kod produkcyjny
 pisany w **Rust** — od firmware (`no_std`) przez chmurę (`tokio`) po rdzeń
 aplikacji mobilnej (UniFFI).
 
+Dokumentacja jest dwujęzyczna: [`docs/pl/`](docs/pl/) (wersja źródłowa) oraz
+[`docs/eng/`](docs/eng/) (English version).
+
 ## Spis dokumentów
 
-| Dokument | Zakres |
-|---|---|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Widok całości, granice systemów, przepływy danych |
-| [DEVICE.md](docs/DEVICE.md) | Stack urządzenia: HAL, radio, stany, provisioning, OTA |
-| [PROTOCOL.md](docs/PROTOCOL.md) | Kontrakt wspólny: DeviceId, ramki, komendy, kodowanie |
-| [CLOUD.md](docs/CLOUD.md) | Stack chmurowy: ingest, serwisy, autoryzacja, deployment |
-| [DATA.md](docs/DATA.md) | Model danych, schemat bazy, retencja, zapytania |
-| [MOBILE.md](docs/MOBILE.md) | Aplikacja mobilna i rdzeń współdzielony |
-| [MATTER.md](docs/MATTER.md) | Zgodność z ekosystemem: most, tożsamość, certyfikacja |
-| [TESTING.md](docs/TESTING.md) | Strategia i poziomy testów, conformance, bramki |
-| [CI.md](docs/CI.md) | Pipeline'y, wydania, podpisywanie firmware, zgodność |
-| [SDK.md](docs/SDK.md) | Procedury rozwoju SDK: API, wersjonowanie, dodawanie platform |
-| [DECISIONS.md](docs/DECISIONS.md) | Log decyzji (ADR) + otwarte pytania |
+| Dokument | PL | EN | Zakres |
+|---|---|---|---|
+| ARCHITECTURE | [pl](docs/pl/ARCHITECTURE.md) | [en](docs/eng/ARCHITECTURE.md) | Widok całości, granice systemów, przepływy danych |
+| DEVICE | [pl](docs/pl/DEVICE.md) | [en](docs/eng/DEVICE.md) | Stack urządzenia: HAL, radio, stany, provisioning, OTA |
+| PROTOCOL | [pl](docs/pl/PROTOCOL.md) | [en](docs/eng/PROTOCOL.md) | Kontrakt wspólny: DeviceId, ramki, komendy, kodowanie |
+| CLOUD | [pl](docs/pl/CLOUD.md) | [en](docs/eng/CLOUD.md) | Stack chmurowy: ingest, serwisy, autoryzacja, deployment |
+| DATA | [pl](docs/pl/DATA.md) | [en](docs/eng/DATA.md) | Model danych, schemat bazy, retencja, zapytania |
+| MOBILE | [pl](docs/pl/MOBILE.md) | [en](docs/eng/MOBILE.md) | Aplikacja mobilna i rdzeń współdzielony |
+| MATTER | [pl](docs/pl/MATTER.md) | [en](docs/eng/MATTER.md) | Zgodność z ekosystemem: most, tożsamość, certyfikacja |
+| TESTING | [pl](docs/pl/TESTING.md) | [en](docs/eng/TESTING.md) | Strategia i poziomy testów, conformance, bramki |
+| CI | [pl](docs/pl/CI.md) | [en](docs/eng/CI.md) | Pipeline'y, wydania, podpisywanie firmware, zgodność |
+| SDK | [pl](docs/pl/SDK.md) | [en](docs/eng/SDK.md) | Procedury rozwoju SDK: API, wersjonowanie, dodawanie platform |
+| DECISIONS | [pl](docs/pl/DECISIONS.md) | [en](docs/eng/DECISIONS.md) | Log decyzji (ADR) + otwarte pytania |
 
 ## Trzy filary
 
@@ -31,7 +34,7 @@ aplikacji mobilnej (UniFFI).
 
 Krzem i radio to dwie niezależne osie: `pkpu-platform-*` zmienia się wraz z MCU,
 `pkpu-link` wraz ze stosem radiowym. Rdzeń nie zna ani jednego, ani drugiego —
-szczegóły w [DEVICE.md](docs/DEVICE.md) sekcja 4 i [ADR-011](docs/DECISIONS.md).
+szczegóły w [DEVICE.md](docs/pl/DEVICE.md) sekcja 4 i [ADR-011](docs/pl/DECISIONS.md).
 
 ## Zasada nadrzędna: jeden kontrakt
 
@@ -53,4 +56,4 @@ miejscu łamie kompilację wszystkich konsumentów — to jest zamierzone.
 ## Status
 
 Faza dokumentacyjna. Brak kodu — najpierw domykamy architekturę i decyzje
-otwarte z [DECISIONS.md](docs/DECISIONS.md).
+otwarte z [DECISIONS.md](docs/pl/DECISIONS.md).
