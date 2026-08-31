@@ -168,7 +168,11 @@ address, peripheral configuration, and lifecycle types. ESP32-C6 controller
 implementations live in `ports/espressif/esp32c6`; the firmware owns allocator
 setup, board RF-switch pins, credentials, host-stack composition, and task
 policy. Portable connectivity crates do not depend on `esp-hal`, `esp-radio`,
-or TrouBLE.
+or TrouBLE. The portable networking package models link and IPv4 configuration
+state. Its separate `embassy-net` adapter maps stack state and bounded DNS
+results without depending on an MCU or board. The ESP32-C6 packet interface is
+owned by the `embassy-net` runner while firmware independently supervises the
+radio controller.
 
 ## Dependency Architecture
 

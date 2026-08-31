@@ -6,6 +6,7 @@ mod tests {
         bluetooth::{AdvertisingInterval, BeaconUuid, DeviceName, IBeacon, StaticRandomAddress},
         config::SchemaVersion,
         core::Capabilities,
+        networking::{DnsServers, Ipv4Configuration, LinkState, NetworkSnapshot},
         storage::Key,
         wifi::{Authentication, Passphrase, Ssid, StationConfig},
     };
@@ -64,5 +65,20 @@ mod tests {
 
         assert_eq!(key.to_raw(), 0x0100_0002);
         assert_eq!(Key::from_raw(key.to_raw()), key);
+    }
+
+    #[test]
+    fn facade_exposes_portable_network_readiness() {
+        let configuration = Ipv4Configuration::new(
+            "192.0.2.10".parse().unwrap(),
+            24,
+            Some("192.0.2.1".parse().unwrap()),
+            DnsServers::new(&["192.0.2.53".parse().unwrap()]).unwrap(),
+        )
+        .unwrap();
+        let snapshot = NetworkSnapshot::new(LinkState::Up, Some(configuration));
+
+        assert!(snapshot.is_ip_ready());
+        assert!(snapshot.is_dns_ready());
     }
 }

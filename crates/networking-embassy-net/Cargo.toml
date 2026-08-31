@@ -1,0 +1,15 @@
+[package]
+name = "embedded-sdk-networking-embassy-net"
+description = "Embassy-net adapter for portable embedded-sdk network state"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+embassy-net.workspace = true
+embedded-sdk-networking.workspace = true
+
+[lints]
+workspace = true

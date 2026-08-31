@@ -16,14 +16,16 @@ The initial firmware proves:
 - Wi-Fi discovery through the portable SDK contract and `esp-radio` adapter.
 - Optional station association using development build credentials.
 - Disconnect monitoring and automatic association retry with bounded backoff.
+- DHCPv4 lease acquisition, DNS resolution, and a controlled TCP connectivity
+  probe through `embassy-net`.
 - Connectable BLE advertising and a reference GATT status service through
   TrouBLE.
 - Dedicated non-connectable iBeacon advertising with deployment-configurable
   identity, interval, calibrated RSSI, and controller TX power.
 - Concurrent Wi-Fi/BLE radio operation through Espressif coexistence support.
 
-IP addressing and sockets, secure BLE provisioning and bonding, IEEE
-802.15.4/OpenThread, and OTA are not part of this bring-up.
+Secure BLE provisioning and bonding, IEEE 802.15.4/OpenThread, TLS, application
+protocols, and OTA are not part of this bring-up.
 
 ## Toolchain
 
@@ -147,6 +149,7 @@ The initial target pins the stable Espressif release family:
 - `esp-radio` 0.18.0
 - `esp-alloc` 0.10.0
 - `trouble-host` 0.6.0
+- `embassy-net` 0.9.1
 
 These versions remain centralized in the workspace manifest. Platform-specific
 dependencies must not be added to portable crates.
@@ -155,7 +158,7 @@ dependencies must not be added to portable crates.
 
 1. Establish an ESP32-C6 hardware-in-the-loop fixture.
 2. Add GPIO and board-revision tests.
-3. Add `embassy-net` DHCP, DNS, and sockets on the implemented Wi-Fi link.
+3. Validate DHCP, DNS, TCP, AP-loss recovery, and BLE coexistence on hardware.
 4. Add authenticated BLE provisioning and persistent bonding.
 5. Add IEEE 802.15.4 and isolate OpenThread FFI behind its platform layer.
 6. Define flash partitions before persistent configuration or OTA is added.

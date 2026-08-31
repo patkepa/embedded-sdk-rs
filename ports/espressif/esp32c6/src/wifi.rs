@@ -9,9 +9,12 @@ use embedded_sdk_wifi::{
     AccessPoint, Authentication, ConnectedStation, Security, Ssid, StationConfig, WifiState,
 };
 use esp_radio::wifi::{
-    AuthenticationMethod, Config, ControllerConfig, Interfaces, WifiController, scan::ScanConfig,
-    sta::StationConfig as EspStationConfig,
+    AuthenticationMethod, Config, ControllerConfig, Interface, Interfaces, WifiController,
+    scan::ScanConfig, sta::StationConfig as EspStationConfig,
 };
+
+/// ESP32-C6 station packet interface consumed by an IP stack.
+pub type StationInterface<'d> = Interface<'d>;
 
 /// Error reported by the ESP32-C6 Wi-Fi adapter.
 #[derive(Debug)]
@@ -54,8 +57,8 @@ impl From<esp_radio::wifi::WifiError> for Error {
 
 /// Owned ESP32-C6 Wi-Fi controller and network interfaces.
 ///
-/// The controller owns radio lifecycle. [`Self::into_parts`] exposes the
-/// station interface when an application is ready to attach `embassy-net`.
+/// The controller owns radio lifecycle. [`Self::into_station_parts`] exposes
+/// the station interface when an application is ready to attach `embassy-net`.
 pub struct Esp32c6Wifi<'d> {
     controller: WifiController<'d>,
     interfaces: Interfaces<'d>,
@@ -125,6 +128,35 @@ impl<'d> Esp32c6Wifi<'d> {
         Ok(())
     }
 
+    /// Separates radio lifecycle control from the station packet interface.
+    ///
+    /// The controller must continue running association and recovery while an
+    /// IP stack such as `embassy-net` owns the returned station interface.
+    pub fn into_station_parts(self) -> (Esp32c6StationController<'d>, StationInterface<'d>) {
+        let station = self.interfaces.station;
+        let controller = Esp32c6StationController {
+            controller: self.controller,
+            state: self.state,
+        };
+        (controller, station)
+    }
+}
+
+/// ESP32-C6 station association and radio-lifecycle controller.
+///
+/// Packet processing is deliberately separated into [`StationInterface`] so
+/// an IP-stack runner can own it concurrently with this controller.
+pub struct Esp32c6StationController<'d> {
+    controller: WifiController<'d>,
+    state: WifiState,
+}
+
+impl Esp32c6StationController<'_> {
+    /// Returns the station controller's high-level lifecycle state.
+    pub const fn state(&self) -> WifiState {
+        self.state
+    }
+
     /// Associates with the configured station network.
     ///
     /// Association establishes the Wi-Fi link only. An IP stack such as
@@ -161,11 +193,6 @@ impl<'d> Esp32c6Wifi<'d> {
                 Err(error.into())
             }
         }
-    }
-
-    /// Releases the platform controller and interfaces for advanced networking.
-    pub fn into_parts(self) -> (WifiController<'d>, Interfaces<'d>) {
-        (self.controller, self.interfaces)
     }
 }
 
