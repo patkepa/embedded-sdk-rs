@@ -7,6 +7,8 @@ use std::{
 };
 
 const ESP32C6_TARGET: &str = "riscv32imac-unknown-none-elf";
+const XIAO_ESP32C6_BEACON: &str = "xiao-esp32c6-beacon";
+const XIAO_ESP32C6_BEACON_SCANNER: &str = "xiao-esp32c6-beacon-scanner";
 const XIAO_ESP32C6_FIRMWARE: &str = "xiao-esp32c6-firmware";
 
 fn main() -> ExitCode {
@@ -21,12 +23,44 @@ fn main() -> ExitCode {
             ESP32C6_TARGET,
             "--release",
         ]),
+        "build-xiao-esp32c6-beacon" => cargo([
+            "build",
+            "-p",
+            XIAO_ESP32C6_BEACON,
+            "--target",
+            ESP32C6_TARGET,
+            "--release",
+        ]),
+        "build-xiao-esp32c6-beacon-scanner" => cargo([
+            "build",
+            "-p",
+            XIAO_ESP32C6_BEACON_SCANNER,
+            "--target",
+            ESP32C6_TARGET,
+            "--release",
+        ]),
         "check" => check(),
         "doctor" => doctor(),
         "run-xiao-esp32c6" => cargo([
             "run",
             "-p",
             XIAO_ESP32C6_FIRMWARE,
+            "--target",
+            ESP32C6_TARGET,
+            "--release",
+        ]),
+        "run-xiao-esp32c6-beacon" => cargo([
+            "run",
+            "-p",
+            XIAO_ESP32C6_BEACON,
+            "--target",
+            ESP32C6_TARGET,
+            "--release",
+        ]),
+        "run-xiao-esp32c6-beacon-scanner" => cargo([
+            "run",
+            "-p",
+            XIAO_ESP32C6_BEACON_SCANNER,
             "--target",
             ESP32C6_TARGET,
             "--release",
@@ -55,6 +89,10 @@ fn check() -> Result<(), String> {
         "--workspace",
         "--exclude",
         XIAO_ESP32C6_FIRMWARE,
+        "--exclude",
+        XIAO_ESP32C6_BEACON,
+        "--exclude",
+        XIAO_ESP32C6_BEACON_SCANNER,
         "--all-targets",
         "--",
         "-D",
@@ -64,7 +102,16 @@ fn check() -> Result<(), String> {
 }
 
 fn host_tests() -> Result<(), String> {
-    cargo(["test", "--workspace", "--exclude", XIAO_ESP32C6_FIRMWARE])
+    cargo([
+        "test",
+        "--workspace",
+        "--exclude",
+        XIAO_ESP32C6_FIRMWARE,
+        "--exclude",
+        XIAO_ESP32C6_BEACON,
+        "--exclude",
+        XIAO_ESP32C6_BEACON_SCANNER,
+    ])
 }
 
 fn doctor() -> Result<(), String> {
@@ -144,4 +191,10 @@ fn print_help() {
     println!("  cargo xtask doctor         verify ESP32-C6 development tools");
     println!("  cargo xtask build-xiao-esp32c6  build release firmware");
     println!("  cargo xtask run-xiao-esp32c6    build, flash, and monitor firmware");
+    println!("  cargo xtask build-xiao-esp32c6-beacon  build iBeacon firmware");
+    println!("  cargo xtask run-xiao-esp32c6-beacon    build, flash, and monitor iBeacon");
+    println!("  cargo xtask build-xiao-esp32c6-beacon-scanner  build BLE scanner firmware");
+    println!(
+        "  cargo xtask run-xiao-esp32c6-beacon-scanner    build, flash, and monitor BLE scanner"
+    );
 }

@@ -18,6 +18,8 @@ The initial firmware proves:
 - Disconnect monitoring and automatic association retry with bounded backoff.
 - Connectable BLE advertising and a reference GATT status service through
   TrouBLE.
+- Dedicated non-connectable iBeacon advertising with deployment-configurable
+  identity, interval, calibrated RSSI, and controller TX power.
 - Concurrent Wi-Fi/BLE radio operation through Espressif coexistence support.
 
 IP addressing and sockets, secure BLE provisioning and bonding, IEEE
@@ -46,11 +48,28 @@ cargo xtask doctor
 cargo xtask build-xiao-esp32c6
 ```
 
+Build the dedicated beacon firmware with:
+
+```sh
+cargo xtask build-xiao-esp32c6-beacon
+```
+
+Build the dedicated BLE scanner firmware with:
+
+```sh
+cargo xtask build-xiao-esp32c6-beacon-scanner
+```
+
 The resulting ELF is written below:
 
 ```text
 target/riscv32imac-unknown-none-elf/release/xiao-esp32c6-firmware
 ```
+
+The beacon ELF is written to
+`target/riscv32imac-unknown-none-elf/release/xiao-esp32c6-beacon`.
+The scanner ELF is written to
+`target/riscv32imac-unknown-none-elf/release/xiao-esp32c6-beacon-scanner`.
 
 ## Flash and monitor
 
@@ -65,6 +84,24 @@ board and chip identity, starts the `XIAO ESP32C6 SDK` BLE peripheral, performs
 one Wi-Fi scan, then toggles the user LED and prints a heartbeat every second.
 Scan logs intentionally contain only the AP count and strongest signal; they do
 not reveal nearby SSIDs or BSSIDs. Bluetooth logs omit local and peer addresses.
+
+To flash the non-connectable beacon instead, run:
+
+```sh
+cargo xtask run-xiao-esp32c6-beacon
+```
+
+See the [Beacon Guide](../connectivity/beacon.md) before assigning deployment
+identifiers or making RF range and battery-life assumptions.
+
+To flash the BLE scanner and monitor its rolling device list, run:
+
+```sh
+cargo xtask run-xiao-esp32c6-beacon-scanner
+```
+
+See the [Beacon Scanner Guide](../connectivity/beacon-scanner.md) for output
+fields and address-privacy considerations.
 
 For development-only association with a WPA2/WPA3 network:
 
@@ -84,6 +121,10 @@ security and networking boundaries of this mechanism.
   board-specific constants.
 - `firmware/seeed/xiao-esp32c6` owns chip initialization, peripheral
   allocation, the panic implementation, executable metadata, and product tasks.
+- `firmware/seeed/xiao-esp32c6-beacon` owns the independent, non-connectable
+  beacon product image and its deployment settings.
+- `firmware/seeed/xiao-esp32c6-beacon-scanner` owns the independent BLE
+  observation and USB-serial diagnostic image.
 
 The firmware drives the XIAO user LED on GPIO15 and deliberately passes `TIMG0`
 and `SW_INTERRUPT` to the platform runtime explicitly. Platform code must not

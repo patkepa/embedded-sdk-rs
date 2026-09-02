@@ -2082,6 +2082,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "xiao-esp32c6-beacon"
+version = "0.1.0"
+dependencies = [
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-time",
+ "embedded-sdk-bluetooth",
+ "embedded-sdk-board-xiao-esp32c6",
+ "embedded-sdk-platform-esp32c6",
+ "esp-alloc",
+ "esp-backtrace",
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-println",
+ "esp-rtos",
+ "trouble-host",
+]
+
+[[package]]
+name = "xiao-esp32c6-beacon-scanner"
+version = "0.1.0"
+dependencies = [
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync 0.7.2",
+ "embassy-time",
+ "embedded-sdk-board-xiao-esp32c6",
+ "embedded-sdk-platform-esp32c6",
+ "esp-alloc",
+ "esp-backtrace",
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-println",
+ "esp-rtos",
+ "trouble-host",
+]
+
+[[package]]
 name = "xiao-esp32c6-firmware"
 version = "0.1.0"
 dependencies = [

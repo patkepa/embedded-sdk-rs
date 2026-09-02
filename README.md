@@ -24,6 +24,14 @@ implemented on the Seeed Studio XIAO ESP32C6 reference target. See the
 [Bluetooth](docs/connectivity/bluetooth.md) guides for their current support
 boundaries.
 
+A dedicated non-connectable iBeacon firmware is also available for the XIAO
+ESP32C6. See the [Beacon Guide](docs/connectivity/beacon.md) for deployment
+configuration, flashing, calibration, and production boundaries.
+
+The XIAO can also run as a dedicated BLE advertisement scanner that prints a
+rolling device list over its USB serial connection. See the
+[Beacon Scanner Guide](docs/connectivity/beacon-scanner.md).
+
 802.15.4/OpenThread, cloud connectivity, board-specific storage backends, and
 OTA remain planned.
 

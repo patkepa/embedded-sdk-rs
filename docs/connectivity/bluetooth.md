@@ -11,10 +11,22 @@ The initial Bluetooth slice provides:
 - Connectable legacy advertising under the name `XIAO ESP32C6 SDK`.
 - One concurrent central connection and a small custom GATT service with a
   readable and notifiable status byte.
+- A dedicated, configurable, non-connectable iBeacon firmware for the XIAO
+  ESP32C6.
+- A dedicated XIAO ESP32C6 central-role scanner that reports nearby BLE
+  advertisers over USB serial.
 - Wi-Fi/BLE radio coexistence in the ESP32-C6 port.
 
 The ESP32-C6 supports Bluetooth Low Energy, not Bluetooth Classic. The SDK uses
 BLE terminology where the distinction matters.
+
+The beacon firmware is documented separately in the
+[XIAO ESP32C6 iBeacon Guide](beacon.md). It does not expose the bring-up GATT
+service or start Wi-Fi.
+
+The scanner firmware is documented in the
+[XIAO ESP32C6 Beacon Scanner Guide](beacon-scanner.md). It actively scans but
+does not connect to observed devices.
 
 ## Portable contract
 
@@ -76,7 +88,9 @@ by connectable advertising.
 
 ## Verification
 
-Host tests cover name bounds, address derivation and byte order, facade exports,
-and XIAO capability metadata. The reference firmware is cross-compiled for
-`riscv32imac-unknown-none-elf`. Hardware interoperability and coexistence tests
-remain required before promoting this support beyond Tier 2.
+Host tests cover name bounds, UUID parsing, iBeacon payload encoding,
+advertising interval validation, address derivation and byte order, facade
+exports, and XIAO capability metadata. All XIAO firmware binaries are
+cross-compiled for `riscv32imac-unknown-none-elf`. Hardware interoperability,
+RF, power, and coexistence tests remain required before promoting this support
+beyond Tier 2.

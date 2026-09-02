@@ -37,7 +37,7 @@ embedded-sdk-runtime = { path = "crates/runtime" }
 embedded-sdk-storage = { path = "crates/storage" }
 embedded-sdk-telemetry = { path = "crates/telemetry" }
 embedded-sdk-wifi = { path = "crates/wifi" }
-embedded-sdk-platform-esp32c6 = { path = "ports/espressif/esp32c6" }
+embedded-sdk-platform-esp32c6 = { path = "ports/espressif/esp32c6", default-features = false }
 embedded-sdk-board-xiao-esp32c6 = { path = "boards/seeed/xiao-esp32c6" }
 
 embassy-executor = "0.10.0"

@@ -18,11 +18,11 @@ pub const CAPABILITIES: Capabilities = Capabilities::WIFI
     .union(Capabilities::CRYPTO_ACCELERATION);
 
 /// ESP32-C6 implementation of the portable Wi-Fi contracts.
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(target_arch = "riscv32", feature = "wifi"))]
 pub mod wifi;
 
 /// ESP32-C6 Bluetooth Low Energy controller adapter.
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(target_arch = "riscv32", feature = "bluetooth"))]
 pub mod bluetooth;
 
 /// Initializes the Embassy executor and time driver on ESP32-C6.

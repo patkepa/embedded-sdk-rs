@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use embedded_sdk::{
-        bluetooth::{DeviceName, StaticRandomAddress},
+        bluetooth::{AdvertisingInterval, BeaconUuid, DeviceName, IBeacon, StaticRandomAddress},
         config::SchemaVersion,
         core::Capabilities,
         storage::Key,
@@ -46,6 +46,16 @@ mod tests {
 
         assert_eq!(name.as_str(), "test-device");
         assert_eq!(address.as_bytes()[0] & 0xc0, 0xc0);
+    }
+
+    #[test]
+    fn facade_exposes_portable_ibeacon_configuration() {
+        let uuid = BeaconUuid::parse("7a1e1000-4c2a-4f66-a1d4-3f55b55a1000").unwrap();
+        let beacon = IBeacon::new(uuid, 1, 2, -59);
+
+        assert_eq!(AdvertisingInterval::default().as_millis(), 250);
+        assert_eq!(beacon.uuid(), uuid);
+        assert_eq!(&beacon.manufacturer_payload()[18..22], &[0, 1, 0, 2]);
     }
 
     #[test]

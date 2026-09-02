@@ -10,6 +10,12 @@ use core::{fmt, str};
 /// discoverability flags and one 16-bit service UUID.
 pub const MAX_DEVICE_NAME_LEN: usize = 22;
 
+/// Bluetooth SIG company identifier used by Apple's iBeacon frame.
+pub const IBEACON_COMPANY_IDENTIFIER: u16 = 0x004c;
+
+/// Length of the manufacturer payload following the company identifier.
+pub const IBEACON_PAYLOAD_LEN: usize = 23;
+
 /// Error returned while constructing a Bluetooth value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -18,6 +24,10 @@ pub enum ConfigError {
     EmptyDeviceName,
     /// The name exceeds [`MAX_DEVICE_NAME_LEN`].
     DeviceNameTooLong,
+    /// A beacon UUID is not in canonical 8-4-4-4-12 hexadecimal form.
+    InvalidBeaconUuid,
+    /// A legacy advertising interval must be between 20 ms and 10.24 seconds.
+    AdvertisingIntervalOutOfRange,
 }
 
 impl fmt::Display for ConfigError {
@@ -27,6 +37,11 @@ impl fmt::Display for ConfigError {
             Self::DeviceNameTooLong => {
                 formatter.write_str("Bluetooth device name exceeds 22 bytes")
             }
+            Self::InvalidBeaconUuid => {
+                formatter.write_str("beacon UUID must use canonical 8-4-4-4-12 hexadecimal form")
+            }
+            Self::AdvertisingIntervalOutOfRange => formatter
+                .write_str("advertising interval must be between 20 and 10240 milliseconds"),
         }
     }
 }
@@ -89,6 +104,188 @@ impl fmt::Debug for DeviceName {
             .debug_tuple("DeviceName")
             .field(&self.as_str())
             .finish()
+    }
+}
+
+/// A 128-bit beacon proximity UUID in network byte order.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct BeaconUuid([u8; 16]);
+
+impl BeaconUuid {
+    /// Parses a canonical UUID such as `7a1e1000-4c2a-4f66-a1d4-3f55b55a1000`.
+    pub fn parse(value: &str) -> Result<Self, ConfigError> {
+        let source = value.as_bytes();
+        if source.len() != 36
+            || source[8] != b'-'
+            || source[13] != b'-'
+            || source[18] != b'-'
+            || source[23] != b'-'
+        {
+            return Err(ConfigError::InvalidBeaconUuid);
+        }
+
+        let mut bytes = [0_u8; 16];
+        let mut source_index = 0;
+        let mut byte_index = 0;
+        while source_index < source.len() {
+            if matches!(source_index, 8 | 13 | 18 | 23) {
+                source_index += 1;
+                continue;
+            }
+
+            let high = decode_hex(source[source_index])?;
+            let low = decode_hex(source[source_index + 1])?;
+            bytes[byte_index] = (high << 4) | low;
+            source_index += 2;
+            byte_index += 1;
+        }
+
+        Ok(Self(bytes))
+    }
+
+    /// Creates a beacon UUID from its network-order bytes.
+    pub const fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(bytes)
+    }
+
+    /// Returns the UUID in network byte order.
+    pub const fn as_bytes(&self) -> &[u8; 16] {
+        &self.0
+    }
+}
+
+impl TryFrom<&str> for BeaconUuid {
+    type Error = ConfigError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::parse(value)
+    }
+}
+
+impl fmt::Display for BeaconUuid {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, byte) in self.0.iter().enumerate() {
+            if matches!(index, 4 | 6 | 8 | 10) {
+                formatter.write_str("-")?;
+            }
+            write!(formatter, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+const fn decode_hex(value: u8) -> Result<u8, ConfigError> {
+    match value {
+        b'0'..=b'9' => Ok(value - b'0'),
+        b'a'..=b'f' => Ok(value - b'a' + 10),
+        b'A'..=b'F' => Ok(value - b'A' + 10),
+        _ => Err(ConfigError::InvalidBeaconUuid),
+    }
+}
+
+/// Validated interval for legacy BLE advertising.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdvertisingInterval(u16);
+
+impl AdvertisingInterval {
+    /// Minimum interval permitted by legacy undirected advertising.
+    pub const MIN_MILLIS: u16 = 20;
+    /// Maximum interval permitted by legacy advertising.
+    pub const MAX_MILLIS: u16 = 10_240;
+
+    /// Validates an interval expressed in milliseconds.
+    pub const fn from_millis(milliseconds: u16) -> Result<Self, ConfigError> {
+        if milliseconds < Self::MIN_MILLIS || milliseconds > Self::MAX_MILLIS {
+            return Err(ConfigError::AdvertisingIntervalOutOfRange);
+        }
+        Ok(Self(milliseconds))
+    }
+
+    /// Returns the interval in milliseconds.
+    pub const fn as_millis(self) -> u16 {
+        self.0
+    }
+}
+
+impl Default for AdvertisingInterval {
+    fn default() -> Self {
+        Self(250)
+    }
+}
+
+/// An iBeacon-compatible proximity frame.
+///
+/// `measured_power` is the calibrated RSSI expected one metre from the beacon;
+/// it is not the controller's radio transmit-power setting.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IBeacon {
+    uuid: BeaconUuid,
+    major: u16,
+    minor: u16,
+    measured_power: i8,
+}
+
+impl IBeacon {
+    /// Creates an iBeacon proximity frame.
+    pub const fn new(uuid: BeaconUuid, major: u16, minor: u16, measured_power: i8) -> Self {
+        Self {
+            uuid,
+            major,
+            minor,
+            measured_power,
+        }
+    }
+
+    /// Returns the proximity UUID.
+    pub const fn uuid(self) -> BeaconUuid {
+        self.uuid
+    }
+
+    /// Returns the deployment-level region identifier.
+    pub const fn major(self) -> u16 {
+        self.major
+    }
+
+    /// Returns the individual beacon identifier within a major region.
+    pub const fn minor(self) -> u16 {
+        self.minor
+    }
+
+    /// Returns the calibrated one-metre RSSI value.
+    pub const fn measured_power(self) -> i8 {
+        self.measured_power
+    }
+
+    /// Encodes the bytes carried after the Apple company identifier.
+    pub const fn manufacturer_payload(self) -> [u8; IBEACON_PAYLOAD_LEN] {
+        let uuid = self.uuid.0;
+        let major = self.major.to_be_bytes();
+        let minor = self.minor.to_be_bytes();
+        [
+            0x02,
+            0x15,
+            uuid[0],
+            uuid[1],
+            uuid[2],
+            uuid[3],
+            uuid[4],
+            uuid[5],
+            uuid[6],
+            uuid[7],
+            uuid[8],
+            uuid[9],
+            uuid[10],
+            uuid[11],
+            uuid[12],
+            uuid[13],
+            uuid[14],
+            uuid[15],
+            major[0],
+            major[1],
+            minor[0],
+            minor[1],
+            self.measured_power as u8,
+        ]
     }
 }
 
@@ -192,7 +389,13 @@ pub enum BluetoothState {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConfigError, DeviceName, MAX_DEVICE_NAME_LEN, StaticRandomAddress};
+    extern crate std;
+
+    use self::std::string::ToString;
+    use super::{
+        AdvertisingInterval, BeaconUuid, ConfigError, DeviceName, IBeacon, MAX_DEVICE_NAME_LEN,
+        StaticRandomAddress,
+    };
 
     #[test]
     fn device_name_is_bounded() {
@@ -222,5 +425,56 @@ mod tests {
 
         assert_eq!(zeroes.as_bytes(), &[0xc0, 0, 0, 0, 0, 1]);
         assert_eq!(ones.as_bytes(), &[0xff, 0xff, 0xff, 0xff, 0xff, 0xfe]);
+    }
+
+    #[test]
+    fn beacon_uuid_parses_and_formats_canonical_text() {
+        let uuid = BeaconUuid::parse("7A1E1000-4C2A-4F66-A1D4-3F55B55A1000").unwrap();
+
+        assert_eq!(
+            uuid.as_bytes(),
+            &[
+                0x7a, 0x1e, 0x10, 0x00, 0x4c, 0x2a, 0x4f, 0x66, 0xa1, 0xd4, 0x3f, 0x55, 0xb5, 0x5a,
+                0x10, 0x00,
+            ]
+        );
+        assert_eq!(uuid.to_string(), "7a1e1000-4c2a-4f66-a1d4-3f55b55a1000");
+        assert_eq!(
+            BeaconUuid::parse("7a1e10004c2a4f66a1d43f55b55a1000"),
+            Err(ConfigError::InvalidBeaconUuid)
+        );
+    }
+
+    #[test]
+    fn ibeacon_payload_uses_network_byte_order() {
+        let uuid = BeaconUuid::from_bytes([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+        let payload = IBeacon::new(uuid, 0x1234, 0xabcd, -59).manufacturer_payload();
+
+        assert_eq!(&payload[..2], &[0x02, 0x15]);
+        assert_eq!(&payload[2..18], uuid.as_bytes());
+        assert_eq!(&payload[18..22], &[0x12, 0x34, 0xab, 0xcd]);
+        assert_eq!(payload[22], 0xc5);
+    }
+
+    #[test]
+    fn advertising_interval_enforces_legacy_bounds() {
+        assert_eq!(
+            AdvertisingInterval::from_millis(20).unwrap().as_millis(),
+            20
+        );
+        assert_eq!(
+            AdvertisingInterval::from_millis(10_240)
+                .unwrap()
+                .as_millis(),
+            10_240
+        );
+        assert_eq!(
+            AdvertisingInterval::from_millis(19),
+            Err(ConfigError::AdvertisingIntervalOutOfRange)
+        );
+        assert_eq!(
+            AdvertisingInterval::from_millis(10_241),
+            Err(ConfigError::AdvertisingIntervalOutOfRange)
+        );
     }
 }

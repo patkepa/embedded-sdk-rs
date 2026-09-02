@@ -7,20 +7,23 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = ["bluetooth", "coex", "wifi"]
+bluetooth = ["dep:embedded-sdk-bluetooth", "esp-radio/ble"]
+coex = ["bluetooth", "esp-radio/coex", "wifi"]
+wifi = ["dep:embedded-sdk-wifi", "esp-radio/wifi"]
+
 [dependencies]
-embedded-sdk-bluetooth.workspace = true
+embedded-sdk-bluetooth = { workspace = true, optional = true }
 embedded-sdk-core.workspace = true
-embedded-sdk-wifi.workspace = true
+embedded-sdk-wifi = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 esp-hal = { workspace = true, features = ["esp32c6", "requires-unstable"] }
 esp-radio = { workspace = true, features = [
-    "ble",
-    "coex",
     "esp-alloc",
     "esp32c6",
     "unstable",
-    "wifi",
 ] }
 esp-rtos = { workspace = true, features = [
     "embassy",

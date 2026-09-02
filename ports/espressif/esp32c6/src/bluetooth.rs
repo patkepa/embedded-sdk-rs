@@ -4,10 +4,12 @@ use core::fmt;
 
 use embedded_sdk_bluetooth::{BluetoothState, StaticRandomAddress};
 use esp_hal::efuse::{self, InterfaceMacAddress};
-use esp_radio::ble::{
-    Config,
-    controller::{BleConnector as EspBleConnector, BleInitError},
-};
+use esp_radio::ble::controller::{BleConnector as EspBleConnector, BleInitError};
+
+/// ESP32-C6 Bluetooth controller configuration.
+pub use esp_radio::ble::Config as ControllerConfig;
+/// ESP32-C6 Bluetooth controller transmit-power setting.
+pub use esp_radio::ble::TxPower as ControllerTxPower;
 
 /// ESP32-C6 HCI transport consumed by a Bluetooth host stack.
 pub type BluetoothConnector<'d> = EspBleConnector<'d>;
@@ -50,7 +52,17 @@ impl<'d> Esp32c6Bluetooth<'d> {
     ///
     /// A global allocator and the `esp-rtos` scheduler must already be running.
     pub fn new(device: esp_hal::peripherals::BT<'d>) -> Result<Self, Error> {
-        let connector = BluetoothConnector::new(device, Config::default())?;
+        Self::new_with_config(device, ControllerConfig::default())
+    }
+
+    /// Initializes the BLE controller with platform-specific radio settings.
+    ///
+    /// A global allocator and the `esp-rtos` scheduler must already be running.
+    pub fn new_with_config(
+        device: esp_hal::peripherals::BT<'d>,
+        config: ControllerConfig,
+    ) -> Result<Self, Error> {
+        let connector = BluetoothConnector::new(device, config)?;
         Ok(Self {
             connector,
             state: BluetoothState::Ready,
