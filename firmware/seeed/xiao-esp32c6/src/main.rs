@@ -7,14 +7,22 @@
 )]
 
 use embassy_executor::Spawner;
-use embassy_futures::{join::join, select::select};
-use embassy_time::{Duration, Timer};
+use embassy_futures::{
+    join::join,
+    select::{Either, select},
+};
+use embassy_net::{
+    Config as NetworkConfig, IpAddress, IpEndpoint, Runner as NetworkRunner, StackResources,
+    tcp::TcpSocket,
+};
+use embassy_time::{Duration, Timer, with_timeout};
 use embedded_sdk_bluetooth::{DeviceName, PeripheralConfig as SdkBluetoothConfig};
 use embedded_sdk_board_xiao_esp32c6::{BLUETOOTH_DEVICE_NAME, HARDWARE};
+use embedded_sdk_networking_embassy_net::EmbassyNetwork;
 use embedded_sdk_platform_esp32c6::{
     bluetooth::{BluetoothConnector, Esp32c6Bluetooth, static_random_address},
     start_embassy,
-    wifi::Esp32c6Wifi,
+    wifi::{Esp32c6StationController, Esp32c6Wifi, StationInterface},
 };
 use embedded_sdk_wifi::{
     Authentication, ConfigError, Passphrase, ReconnectBackoff, ScanSummary, Ssid, StationConfig,
@@ -22,11 +30,24 @@ use embedded_sdk_wifi::{
 use esp_backtrace as _;
 use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::rng::Rng;
+use static_cell::StaticCell;
 use trouble_host::prelude::*;
 
 const BLUETOOTH_CONNECTIONS_MAX: usize = 1;
 // One signaling channel and one ATT channel per connection.
 const BLUETOOTH_L2CAP_CHANNELS_MAX: usize = 2;
+// DHCP and DNS each reserve one socket; the controlled probe reserves one.
+const NETWORK_SOCKET_COUNT: usize = 3;
+const NETWORK_TCP_RX_BUFFER_SIZE: usize = 512;
+const NETWORK_TCP_TX_BUFFER_SIZE: usize = 512;
+const NETWORK_DHCP_REPORT_INTERVAL: Duration = Duration::from_secs(30);
+const NETWORK_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[derive(Clone, Copy)]
+struct NetworkProbe {
+    host: &'static str,
+    port: u16,
+}
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -98,7 +119,17 @@ async fn main(spawner: Spawner) {
             if let Err(error) = wifi.configure_station(&station) {
                 esp_println::println!("embedded-sdk wifi configuration failed: {error}");
             } else {
-                supervise_station(&mut wifi).await;
+                let (controller, station_interface) = wifi.into_station_parts();
+                let network_probe = match development_network_probe() {
+                    Ok(probe) => probe,
+                    Err(error) => {
+                        esp_println::println!(
+                            "embedded-sdk network probe configuration failed: {error}"
+                        );
+                        None
+                    }
+                };
+                start_networking(&spawner, controller, station_interface, network_probe);
             }
         }
         Ok(None) => esp_println::println!(
@@ -112,6 +143,45 @@ async fn main(spawner: Spawner) {
     }
 }
 
+fn start_networking(
+    spawner: &Spawner,
+    controller: Esp32c6StationController<'static>,
+    station_interface: StationInterface<'static>,
+    probe: Option<NetworkProbe>,
+) {
+    static RESOURCES: StaticCell<StackResources<NETWORK_SOCKET_COUNT>> = StaticCell::new();
+
+    let rng = Rng::new();
+    let random_seed = (u64::from(rng.random()) << 32) | u64::from(rng.random());
+    let network_config = NetworkConfig::dhcpv4(Default::default());
+    let (stack, runner) = embassy_net::new(
+        station_interface,
+        network_config,
+        RESOURCES.init(StackResources::new()),
+        random_seed,
+    );
+    let network = EmbassyNetwork::new(stack);
+
+    match network_runner_task(runner) {
+        Ok(task) => spawner.spawn(task),
+        Err(_) => {
+            esp_println::println!("embedded-sdk network runner task allocation failed");
+            return;
+        }
+    }
+    match wifi_station_task(controller) {
+        Ok(task) => spawner.spawn(task),
+        Err(_) => {
+            esp_println::println!("embedded-sdk wifi station task allocation failed");
+            return;
+        }
+    }
+    match network_monitor_task(network, probe) {
+        Ok(task) => spawner.spawn(task),
+        Err(_) => esp_println::println!("embedded-sdk network monitor task allocation failed"),
+    }
+}
+
 #[embassy_executor::task]
 async fn heartbeat(mut user_led: Output<'static>) {
     let mut heartbeat = 0_u64;
@@ -120,6 +190,123 @@ async fn heartbeat(mut user_led: Output<'static>) {
         esp_println::println!("embedded-sdk heartbeat={heartbeat}");
         heartbeat = heartbeat.wrapping_add(1);
         Timer::after(Duration::from_secs(1)).await;
+    }
+}
+
+#[embassy_executor::task]
+async fn wifi_station_task(mut controller: Esp32c6StationController<'static>) {
+    supervise_station(&mut controller).await;
+}
+
+#[embassy_executor::task]
+async fn network_runner_task(mut runner: NetworkRunner<'static, StationInterface<'static>>) {
+    runner.run().await;
+}
+
+#[embassy_executor::task]
+async fn network_monitor_task(network: EmbassyNetwork<'static>, probe: Option<NetworkProbe>) {
+    let stack = network.stack();
+
+    loop {
+        stack.wait_link_up().await;
+        esp_println::println!("embedded-sdk network link up: ipv4=pending");
+
+        let configured = loop {
+            match select(
+                with_timeout(NETWORK_DHCP_REPORT_INTERVAL, stack.wait_config_up()),
+                stack.wait_link_down(),
+            )
+            .await
+            {
+                Either::First(Ok(())) => match network.snapshot() {
+                    Ok(snapshot) if snapshot.is_ip_ready() => break true,
+                    Ok(_) => continue,
+                    Err(error) => {
+                        esp_println::println!(
+                            "embedded-sdk network state conversion failed: {error}"
+                        );
+                        break false;
+                    }
+                },
+                Either::First(Err(_)) => {
+                    esp_println::println!("embedded-sdk network DHCP pending");
+                }
+                Either::Second(()) => {
+                    esp_println::println!("embedded-sdk network link down");
+                    break false;
+                }
+            }
+        };
+
+        if !configured {
+            continue;
+        }
+
+        let snapshot = match network.snapshot() {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                esp_println::println!("embedded-sdk network state conversion failed: {error}");
+                continue;
+            }
+        };
+        let dns_servers = snapshot
+            .ipv4()
+            .map_or(0, |configuration| configuration.dns_servers().len());
+        esp_println::println!("embedded-sdk network IPv4 configured: dns_servers={dns_servers}");
+
+        if let Some(probe) = probe {
+            if snapshot.is_dns_ready() {
+                run_network_probe(network, probe).await;
+            } else {
+                esp_println::println!("embedded-sdk network probe skipped: DNS unavailable");
+            }
+        }
+
+        match network.wait_ip_down().await {
+            Ok(_) => esp_println::println!("embedded-sdk network IPv4 configuration lost"),
+            Err(error) => {
+                esp_println::println!("embedded-sdk network state conversion failed: {error}")
+            }
+        }
+    }
+}
+
+async fn run_network_probe(network: EmbassyNetwork<'_>, probe: NetworkProbe) {
+    let mut addresses = [core::net::Ipv4Addr::UNSPECIFIED; 4];
+    let address_count = match with_timeout(
+        NETWORK_OPERATION_TIMEOUT,
+        network.resolve_ipv4(probe.host, &mut addresses),
+    )
+    .await
+    {
+        Ok(Ok(count)) => count,
+        Ok(Err(error)) => {
+            esp_println::println!("embedded-sdk network DNS probe failed: {error}");
+            return;
+        }
+        Err(_) => {
+            esp_println::println!("embedded-sdk network DNS probe timed out");
+            return;
+        }
+    };
+
+    let mut rx_buffer = [0; NETWORK_TCP_RX_BUFFER_SIZE];
+    let mut tx_buffer = [0; NETWORK_TCP_TX_BUFFER_SIZE];
+    let mut socket = TcpSocket::new(network.stack(), &mut rx_buffer, &mut tx_buffer);
+    socket.set_timeout(Some(NETWORK_OPERATION_TIMEOUT));
+    let endpoint = IpEndpoint::new(IpAddress::Ipv4(addresses[0]), probe.port);
+    match with_timeout(NETWORK_OPERATION_TIMEOUT, socket.connect(endpoint)).await {
+        Ok(Ok(())) => {
+            esp_println::println!(
+                "embedded-sdk network probe succeeded: resolved_addresses={address_count}"
+            );
+            socket.close();
+            let _ = with_timeout(NETWORK_OPERATION_TIMEOUT, socket.flush()).await;
+        }
+        Ok(Err(error)) => {
+            esp_println::println!("embedded-sdk network TCP probe failed: {error:?}");
+        }
+        Err(_) => esp_println::println!("embedded-sdk network TCP probe timed out"),
     }
 }
 
@@ -266,7 +453,7 @@ async fn bluetooth_status_notifications<P: PacketPool>(
     }
 }
 
-async fn supervise_station(wifi: &mut Esp32c6Wifi<'_>) -> ! {
+async fn supervise_station(wifi: &mut Esp32c6StationController<'_>) -> ! {
     let rng = Rng::new();
     let mut backoff = ReconnectBackoff::default();
 
@@ -312,5 +499,25 @@ fn development_station_config() -> Result<Option<StationConfig>, ConfigError> {
             StationConfig::personal(ssid, passphrase, Authentication::Wpa2Wpa3Personal).map(Some)
         }
         (None, Some(_)) => Err(ConfigError::EmptySsid),
+    }
+}
+
+fn development_network_probe() -> Result<Option<NetworkProbe>, &'static str> {
+    match (
+        option_env!("NETWORK_TEST_HOST"),
+        option_env!("NETWORK_TEST_PORT"),
+    ) {
+        (None, None) => Ok(None),
+        (Some(host), Some(port)) if !host.is_empty() => {
+            let port = port
+                .parse::<u16>()
+                .map_err(|_| "NETWORK_TEST_PORT must be an integer from 1 through 65535")?;
+            if port == 0 {
+                return Err("NETWORK_TEST_PORT must be an integer from 1 through 65535");
+            }
+            Ok(Some(NetworkProbe { host, port }))
+        }
+        (Some(_), Some(_)) => Err("NETWORK_TEST_HOST must not be empty"),
+        _ => Err("NETWORK_TEST_HOST and NETWORK_TEST_PORT must be set together"),
     }
 }

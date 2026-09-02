@@ -13,6 +13,8 @@ default-members = [
     "crates/bluetooth",
     "crates/core",
     "crates/config",
+    "crates/networking",
+    "crates/networking-embassy-net",
     "crates/runtime",
     "crates/storage",
     "crates/telemetry",
@@ -33,6 +35,8 @@ embedded-sdk = { path = "crates/embedded-sdk" }
 embedded-sdk-bluetooth = { path = "crates/bluetooth" }
 embedded-sdk-core = { path = "crates/core" }
 embedded-sdk-config = { path = "crates/config" }
+embedded-sdk-networking = { path = "crates/networking" }
+embedded-sdk-networking-embassy-net = { path = "crates/networking-embassy-net" }
 embedded-sdk-runtime = { path = "crates/runtime" }
 embedded-sdk-storage = { path = "crates/storage" }
 embedded-sdk-telemetry = { path = "crates/telemetry" }
@@ -42,6 +46,13 @@ embedded-sdk-board-xiao-esp32c6 = { path = "boards/seeed/xiao-esp32c6" }
 
 embassy-executor = "0.10.0"
 embassy-futures = "0.1.2"
+embassy-net = { version = "0.9.1", default-features = false, features = [
+    "dhcpv4",
+    "dns",
+    "medium-ethernet",
+    "proto-ipv4",
+    "tcp",
+] }
 embassy-sync = "0.7.2"
 embassy-time = "0.5.1"
 embedded-storage = "0.3.1"
