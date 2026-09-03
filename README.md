@@ -38,6 +38,11 @@ The XIAO can also run as a dedicated BLE advertisement scanner that prints a
 rolling device list over its USB serial connection. See the
 [Beacon Scanner Guide](docs/connectivity/beacon-scanner.md).
 
+Portable battery measurement and explicitly approximate voltage-curve state of
+charge estimation are implemented by the DFRobot Beetle ESP32-C6 reference
+target. See the [Power Guide](docs/power.md) and
+[Beetle ESP32-C6 Platform Guide](docs/porting/dfrobot-beetle-esp32c6.md).
+
 802.15.4/OpenThread, secure cloud connectivity, board-specific storage
 backends, and OTA remain planned.
 

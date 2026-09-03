@@ -13,6 +13,7 @@ embedded-sdk-config.workspace = true
 embedded-sdk-core.workspace = true
 embedded-sdk-networking.workspace = true
 embedded-sdk-mqtt.workspace = true
+embedded-sdk-power.workspace = true
 embedded-sdk-runtime.workspace = true
 embedded-sdk-storage.workspace = true
 embedded-sdk-telemetry.workspace = true

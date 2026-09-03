@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 embedded-sdk.workspace = true
+embedded-sdk-board-beetle-esp32c6.workspace = true
 embedded-sdk-board-xiao-esp32c6.workspace = true
 
 [lints]

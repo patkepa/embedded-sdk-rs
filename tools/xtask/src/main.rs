@@ -7,6 +7,7 @@ use std::{
 };
 
 const ESP32C6_TARGET: &str = "riscv32imac-unknown-none-elf";
+const BEETLE_ESP32C6_BATTERY: &str = "beetle-esp32c6-battery";
 const XIAO_ESP32C6_BEACON: &str = "xiao-esp32c6-beacon";
 const XIAO_ESP32C6_BEACON_SCANNER: &str = "xiao-esp32c6-beacon-scanner";
 const XIAO_ESP32C6_FIRMWARE: &str = "xiao-esp32c6-firmware";
@@ -15,6 +16,14 @@ fn main() -> ExitCode {
     let command = env::args().nth(1).unwrap_or_else(|| "help".to_owned());
 
     let result = match command.as_str() {
+        "build-beetle-esp32c6-battery" => cargo([
+            "build",
+            "-p",
+            BEETLE_ESP32C6_BATTERY,
+            "--target",
+            ESP32C6_TARGET,
+            "--release",
+        ]),
         "build-xiao-esp32c6" => cargo([
             "build",
             "-p",
@@ -41,6 +50,14 @@ fn main() -> ExitCode {
         ]),
         "check" => check(),
         "doctor" => doctor(),
+        "run-beetle-esp32c6-battery" => cargo([
+            "run",
+            "-p",
+            BEETLE_ESP32C6_BATTERY,
+            "--target",
+            ESP32C6_TARGET,
+            "--release",
+        ]),
         "run-xiao-esp32c6" => cargo([
             "run",
             "-p",
@@ -88,6 +105,8 @@ fn check() -> Result<(), String> {
         "clippy",
         "--workspace",
         "--exclude",
+        BEETLE_ESP32C6_BATTERY,
+        "--exclude",
         XIAO_ESP32C6_FIRMWARE,
         "--exclude",
         XIAO_ESP32C6_BEACON,
@@ -105,6 +124,8 @@ fn host_tests() -> Result<(), String> {
     cargo([
         "test",
         "--workspace",
+        "--exclude",
+        BEETLE_ESP32C6_BATTERY,
         "--exclude",
         XIAO_ESP32C6_FIRMWARE,
         "--exclude",
@@ -189,6 +210,8 @@ fn print_help() {
     println!("  cargo xtask check          format, lint, and test host packages");
     println!("  cargo xtask test           run host tests");
     println!("  cargo xtask doctor         verify ESP32-C6 development tools");
+    println!("  cargo xtask build-beetle-esp32c6-battery  build Beetle battery firmware");
+    println!("  cargo xtask run-beetle-esp32c6-battery    build, flash, and monitor it");
     println!("  cargo xtask build-xiao-esp32c6  build release firmware");
     println!("  cargo xtask run-xiao-esp32c6    build, flash, and monitor firmware");
     println!("  cargo xtask build-xiao-esp32c6-beacon  build iBeacon firmware");

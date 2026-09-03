@@ -1,0 +1,36 @@
+[package]
+name = "beetle-esp32c6-battery"
+description = "Battery-monitoring reference firmware for DFRobot Beetle ESP32-C6"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "beetle-esp32c6-battery"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+embassy-executor.workspace = true
+embassy-time.workspace = true
+embedded-sdk-board-beetle-esp32c6.workspace = true
+embedded-sdk-platform-esp32c6.workspace = true
+embedded-sdk-power.workspace = true
+esp-alloc = { workspace = true, features = ["compat", "esp32c6", "global-allocator"] }
+esp-backtrace = { workspace = true, features = ["esp32c6", "panic-handler", "println"] }
+esp-bootloader-esp-idf = { workspace = true, features = ["esp32c6"] }
+esp-hal = { workspace = true, features = [
+    "esp32c6",
+    "exception-handler",
+    "rt",
+    "unstable",
+] }
+esp-println = { workspace = true, features = ["esp32c6"] }
+esp-rtos = { workspace = true, features = ["embassy", "esp32c6"] }
+
+[lints]
+workspace = true

@@ -13,6 +13,7 @@ firmware:
 
 ```sh
 cargo xtask build-xiao-esp32c6
+cargo xtask build-beetle-esp32c6-battery
 ```
 
 Hardware behavior changes should include hardware-in-the-loop evidence when a

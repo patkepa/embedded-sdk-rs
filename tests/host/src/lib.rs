@@ -10,10 +10,23 @@ mod tests {
             BrokerHostname, BrokerPort, ClientId, Config as MqttConfig, TopicFilter, TopicName,
         },
         networking::{DnsServers, Ipv4Configuration, LinkState, NetworkSnapshot},
+        power::{EstimateBasis, Millivolts, VoltageCurve, VoltagePoint},
         storage::Key,
         wifi::{Authentication, Passphrase, Ssid, StationConfig},
     };
+    use embedded_sdk_board_beetle_esp32c6::HARDWARE as BEETLE_HARDWARE;
     use embedded_sdk_board_xiao_esp32c6::HARDWARE;
+
+    #[test]
+    fn beetle_esp32c6_exposes_battery_voltage_monitoring() {
+        assert_eq!(BEETLE_HARDWARE.board, "beetle-esp32c6");
+        assert_eq!(BEETLE_HARDWARE.chip, "esp32c6");
+        assert!(
+            BEETLE_HARDWARE
+                .capabilities
+                .contains(Capabilities::BATTERY_VOLTAGE_MONITORING)
+        );
+    }
 
     #[test]
     fn xiao_esp32c6_descriptor_is_available_without_cross_compiling() {
@@ -101,5 +114,20 @@ mod tests {
         assert!(TopicName::new("devices/test/telemetry").is_ok());
         assert!(TopicFilter::new("devices/+/commands").is_ok());
         assert!(TopicName::new("devices/+/commands").is_err());
+    }
+
+    #[test]
+    fn facade_exposes_explicit_voltage_based_battery_estimates() {
+        let points = [
+            VoltagePoint::new(3_300, 0),
+            VoltagePoint::new(3_700, 20),
+            VoltagePoint::new(4_200, 100),
+        ];
+        let estimate = VoltageCurve::new(&points)
+            .unwrap()
+            .estimate(Millivolts::new(3_950));
+
+        assert_eq!(estimate.percentage().get(), 60);
+        assert_eq!(estimate.basis(), EstimateBasis::TerminalVoltage);
     }
 }
