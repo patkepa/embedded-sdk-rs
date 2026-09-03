@@ -1,0 +1,11 @@
+[package]
+name = "embedded-sdk-mqtt"
+description = "Portable bounded MQTT configuration and lifecycle contracts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true

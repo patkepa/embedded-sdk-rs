@@ -8,6 +8,8 @@ pub use embedded_sdk_bluetooth as bluetooth;
 pub use embedded_sdk_config as config;
 /// Hardware identity and capability types.
 pub use embedded_sdk_core as core;
+/// Portable MQTT configuration and lifecycle contracts.
+pub use embedded_sdk_mqtt as mqtt;
 /// Portable link and IP configuration state.
 pub use embedded_sdk_networking as networking;
 /// Service lifecycle and health primitives.

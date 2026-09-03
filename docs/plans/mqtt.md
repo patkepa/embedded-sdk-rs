@@ -2,7 +2,8 @@
 
 ## Status
 
-- Status: Proposed
+- Status: In progress — portable model, minimq adapter, host tests, and
+  ESP32-C6 plaintext fixture are implemented; TLS and HIL gates remain open
 - Branch: `feat/mqtt`
 - Target: Seeed Studio XIAO ESP32C6
 - Protocol: MQTT 5.0

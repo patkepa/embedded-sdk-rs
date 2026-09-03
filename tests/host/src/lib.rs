@@ -6,6 +6,9 @@ mod tests {
         bluetooth::{AdvertisingInterval, BeaconUuid, DeviceName, IBeacon, StaticRandomAddress},
         config::SchemaVersion,
         core::Capabilities,
+        mqtt::{
+            BrokerHostname, BrokerPort, ClientId, Config as MqttConfig, TopicFilter, TopicName,
+        },
         networking::{DnsServers, Ipv4Configuration, LinkState, NetworkSnapshot},
         storage::Key,
         wifi::{Authentication, Passphrase, Ssid, StationConfig},
@@ -80,5 +83,23 @@ mod tests {
 
         assert!(snapshot.is_ip_ready());
         assert!(snapshot.is_dns_ready());
+    }
+
+    #[test]
+    fn facade_exposes_bounded_mqtt_configuration() {
+        let config = MqttConfig::new(
+            BrokerHostname::new("broker.example.test").unwrap(),
+            BrokerPort::new(8883).unwrap(),
+            ClientId::new("host-test-client").unwrap(),
+            30,
+            300,
+            1024,
+        )
+        .unwrap();
+
+        assert_eq!(config.port().get(), 8883);
+        assert!(TopicName::new("devices/test/telemetry").is_ok());
+        assert!(TopicFilter::new("devices/+/commands").is_ok());
+        assert!(TopicName::new("devices/+/commands").is_err());
     }
 }

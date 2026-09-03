@@ -20,8 +20,11 @@ embassy-futures.workspace = true
 embassy-net.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
+embedded-io-async.workspace = true
 embedded-sdk-board-xiao-esp32c6.workspace = true
 embedded-sdk-bluetooth.workspace = true
+embedded-sdk-mqtt.workspace = true
+embedded-sdk-mqtt-minimq.workspace = true
 embedded-sdk-networking-embassy-net.workspace = true
 embedded-sdk-platform-esp32c6 = { workspace = true, features = ["bluetooth", "coex", "wifi"] }
 embedded-sdk-wifi.workspace = true
