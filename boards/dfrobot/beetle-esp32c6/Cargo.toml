@@ -1,0 +1,20 @@
+[package]
+name = "embedded-sdk-board-beetle-esp32c6"
+description = "Board support for the DFRobot Beetle ESP32-C6"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+embedded-sdk-core.workspace = true
+embedded-sdk-platform-esp32c6.workspace = true
+embedded-sdk-power.workspace = true
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+esp-hal = { workspace = true, features = ["esp32c6", "requires-unstable"] }
+nb.workspace = true
+
+[lints]
+workspace = true

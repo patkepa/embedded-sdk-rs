@@ -3,7 +3,9 @@ resolver = "3"
 members = [
     "crates/*",
     "ports/espressif/*",
+    "boards/dfrobot/*",
     "boards/seeed/*",
+    "firmware/dfrobot/*",
     "firmware/seeed/*",
     "tests/host",
     "tools/xtask",
@@ -17,6 +19,7 @@ default-members = [
     "crates/networking-embassy-net",
     "crates/mqtt",
     "crates/mqtt-minimq",
+    "crates/power",
     "crates/runtime",
     "crates/storage",
     "crates/telemetry",
@@ -41,11 +44,13 @@ embedded-sdk-networking = { path = "crates/networking" }
 embedded-sdk-networking-embassy-net = { path = "crates/networking-embassy-net" }
 embedded-sdk-mqtt = { path = "crates/mqtt" }
 embedded-sdk-mqtt-minimq = { path = "crates/mqtt-minimq" }
+embedded-sdk-power = { path = "crates/power" }
 embedded-sdk-runtime = { path = "crates/runtime" }
 embedded-sdk-storage = { path = "crates/storage" }
 embedded-sdk-telemetry = { path = "crates/telemetry" }
 embedded-sdk-wifi = { path = "crates/wifi" }
 embedded-sdk-platform-esp32c6 = { path = "ports/espressif/esp32c6", default-features = false }
+embedded-sdk-board-beetle-esp32c6 = { path = "boards/dfrobot/beetle-esp32c6" }
 embedded-sdk-board-xiao-esp32c6 = { path = "boards/seeed/xiao-esp32c6" }
 
 embassy-executor = "0.10.0"
@@ -72,6 +77,7 @@ esp-rtos = { version = "=0.3.0", default-features = false }
 sequential-storage = { version = "=8.0.1", default-features = false }
 static_cell = "2.1.1"
 minimq = { version = "=0.13.0", default-features = false }
+nb = "1.1.0"
 trouble-host = { version = "=0.6.0", default-features = false }
 zeroize = { version = "=1.9.0", default-features = false }
 

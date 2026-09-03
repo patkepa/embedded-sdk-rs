@@ -7,6 +7,12 @@ check:
 test:
     cargo xtask test
 
+build-beetle-esp32c6-battery:
+    cargo xtask build-beetle-esp32c6-battery
+
+run-beetle-esp32c6-battery:
+    cargo xtask run-beetle-esp32c6-battery
+
 build-xiao-esp32c6:
     cargo xtask build-xiao-esp32c6
 

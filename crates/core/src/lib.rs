@@ -43,6 +43,8 @@ impl Capabilities {
     pub const OTA: Self = Self(1 << 7);
     /// Persistent storage available to application services.
     pub const PERSISTENT_STORAGE: Self = Self(1 << 8);
+    /// Battery terminal voltage can be observed by firmware.
+    pub const BATTERY_VOLTAGE_MONITORING: Self = Self(1 << 9);
 
     /// Creates a capability set from its stable wire representation.
     #[must_use]
