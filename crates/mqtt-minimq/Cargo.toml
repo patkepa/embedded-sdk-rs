@@ -1,0 +1,19 @@
+[package]
+name = "embedded-sdk-mqtt-minimq"
+description = "minimq MQTT 5 adapter over generic async byte streams"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+embedded-io-async.workspace = true
+embedded-sdk-mqtt.workspace = true
+minimq.workspace = true
+
+[dev-dependencies]
+embassy-time = { workspace = true, features = ["std", "generic-queue-8"] }
+
+[lints]
+workspace = true

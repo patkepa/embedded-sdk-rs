@@ -18,8 +18,9 @@ The SDK provides one IPv4 networking vertical slice:
 - An optional controlled DNS and TCP probe proves the complete path without
   hard-coding a public endpoint.
 
-IPv6, static address policy, TLS, HTTP, MQTT, SNTP, and cloud integrations are
-not implied by this slice.
+IPv6, static address policy, TLS, HTTP, SNTP, and cloud integrations are not
+implied by this slice. MQTT is a separate protocol slice with its own support
+boundary.
 
 ## Portable state model
 
@@ -46,10 +47,10 @@ The ESP32-C6 Wi-Fi adapter is split after scan and station configuration:
 - Firmware owns task spawning, the random stack seed, DHCP policy, stack
   resources, socket buffers, timeouts, and connectivity probes.
 
-The reference firmware reserves three stack socket slots: one for DHCP, one for
-DNS, and one for the optional TCP probe. Probe RX and TX buffers are each 512
-bytes and live in the statically allocated Embassy task future. The existing
-96 KiB radio heap is unchanged.
+The reference firmware reserves four stack socket slots so DHCP, DNS, the
+optional TCP probe, and the MQTT fixture connection can overlap. Probe RX and
+TX buffers are each 512 bytes and live in the statically allocated Embassy task
+future. The existing 96 KiB radio heap is unchanged.
 
 Release image measurements use the same non-secret benchmark station settings
 and the `espflash save-image` application-size report:

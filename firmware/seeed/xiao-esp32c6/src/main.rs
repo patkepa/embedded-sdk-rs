@@ -6,6 +6,8 @@
     reason = "TrouBLE 0.6 GATT derive macros emit this pattern"
 )]
 
+use core::sync::atomic::{AtomicU32, Ordering};
+
 use embassy_executor::Spawner;
 use embassy_futures::{
     join::join,
@@ -15,9 +17,19 @@ use embassy_net::{
     Config as NetworkConfig, IpAddress, IpEndpoint, Runner as NetworkRunner, StackResources,
     tcp::TcpSocket,
 };
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embassy_time::{Duration, Timer, with_timeout};
+use embedded_io_async::{ErrorType, Read, Write};
 use embedded_sdk_bluetooth::{DeviceName, PeripheralConfig as SdkBluetoothConfig};
 use embedded_sdk_board_xiao_esp32c6::{BLUETOOTH_DEVICE_NAME, HARDWARE};
+use embedded_sdk_mqtt::{
+    BrokerHostname, BrokerPort, ClientId, Config as MqttConfig, ConnectionState as MqttState,
+    ErrorKind as MqttErrorKind, QoS as MqttQos, ReconnectPolicy as MqttReconnectPolicy,
+    TopicFilter, TopicName,
+};
+use embedded_sdk_mqtt_minimq::{
+    Client as MqttClient, Connection as MqttConnection, TransportSecurity,
+};
 use embedded_sdk_networking_embassy_net::EmbassyNetwork;
 use embedded_sdk_platform_esp32c6::{
     bluetooth::{BluetoothConnector, Esp32c6Bluetooth, static_random_address},
@@ -36,17 +48,43 @@ use trouble_host::prelude::*;
 const BLUETOOTH_CONNECTIONS_MAX: usize = 1;
 // One signaling channel and one ATT channel per connection.
 const BLUETOOTH_L2CAP_CHANNELS_MAX: usize = 2;
-// DHCP and DNS each reserve one socket; the controlled probe reserves one.
-const NETWORK_SOCKET_COUNT: usize = 3;
+// DHCP, DNS, the controlled probe, and long-lived MQTT may overlap.
+const NETWORK_SOCKET_COUNT: usize = 4;
 const NETWORK_TCP_RX_BUFFER_SIZE: usize = 512;
 const NETWORK_TCP_TX_BUFFER_SIZE: usize = 512;
 const NETWORK_DHCP_REPORT_INTERVAL: Duration = Duration::from_secs(30);
 const NETWORK_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
+const MQTT_RX_PACKET_BUFFER_SIZE: usize = 512;
+const MQTT_TX_REPLAY_BUFFER_SIZE: usize = 1024;
+const MQTT_TCP_RX_BUFFER_SIZE: usize = 1024;
+const MQTT_TCP_TX_BUFFER_SIZE: usize = 1024;
+const MQTT_OUTBOUND_CHANNEL_DEPTH: usize = 4;
+const MQTT_TELEMETRY_INTERVAL: Duration = Duration::from_secs(30);
+
+static MQTT_OUTBOUND: Channel<
+    CriticalSectionRawMutex,
+    OutboundMessage,
+    MQTT_OUTBOUND_CHANNEL_DEPTH,
+> = Channel::new();
+static MQTT_QUEUE_DROPS: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Clone, Copy)]
 struct NetworkProbe {
     host: &'static str,
     port: u16,
+}
+
+#[derive(Clone, Copy)]
+struct MqttDevelopmentConfig {
+    session: MqttConfig,
+    telemetry_topic: TopicName,
+    command_filter: TopicFilter,
+}
+
+#[derive(Clone, Copy)]
+struct OutboundMessage {
+    payload: &'static [u8],
+    qos: MqttQos,
 }
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -129,7 +167,14 @@ async fn main(spawner: Spawner) {
                         None
                     }
                 };
-                start_networking(&spawner, controller, station_interface, network_probe);
+                let mqtt = match development_mqtt_config() {
+                    Ok(config) => config,
+                    Err(error) => {
+                        esp_println::println!("embedded-sdk MQTT configuration failed: {error}");
+                        None
+                    }
+                };
+                start_networking(&spawner, controller, station_interface, network_probe, mqtt);
             }
         }
         Ok(None) => esp_println::println!(
@@ -148,6 +193,7 @@ fn start_networking(
     controller: Esp32c6StationController<'static>,
     station_interface: StationInterface<'static>,
     probe: Option<NetworkProbe>,
+    mqtt: Option<MqttDevelopmentConfig>,
 ) {
     static RESOURCES: StaticCell<StackResources<NETWORK_SOCKET_COUNT>> = StaticCell::new();
 
@@ -179,6 +225,18 @@ fn start_networking(
     match network_monitor_task(network, probe) {
         Ok(task) => spawner.spawn(task),
         Err(_) => esp_println::println!("embedded-sdk network monitor task allocation failed"),
+    }
+    if let Some(config) = mqtt {
+        match mqtt_task(network, config) {
+            Ok(task) => spawner.spawn(task),
+            Err(_) => esp_println::println!("embedded-sdk MQTT task allocation failed"),
+        }
+        match mqtt_telemetry_producer_task() {
+            Ok(task) => spawner.spawn(task),
+            Err(_) => esp_println::println!("embedded-sdk MQTT producer task allocation failed"),
+        }
+    } else {
+        esp_println::println!("embedded-sdk MQTT disabled");
     }
 }
 
@@ -269,6 +327,191 @@ async fn network_monitor_task(network: EmbassyNetwork<'static>, probe: Option<Ne
             }
         }
     }
+}
+
+#[embassy_executor::task]
+async fn mqtt_telemetry_producer_task() {
+    const PAYLOAD: &[u8] = br#"{"version":1,"kind":"heartbeat"}"#;
+    loop {
+        if MQTT_OUTBOUND
+            .try_send(OutboundMessage {
+                payload: PAYLOAD,
+                qos: MqttQos::AtLeastOnce,
+            })
+            .is_err()
+        {
+            MQTT_QUEUE_DROPS.fetch_add(1, Ordering::Relaxed);
+        }
+        Timer::after(MQTT_TELEMETRY_INTERVAL).await;
+    }
+}
+
+#[embassy_executor::task]
+async fn mqtt_task(network: EmbassyNetwork<'static>, config: MqttDevelopmentConfig) {
+    let mut mqtt_rx = [0; MQTT_RX_PACKET_BUFFER_SIZE];
+    let mut mqtt_tx = [0; MQTT_TX_REPLAY_BUFFER_SIZE];
+    let mut client = match MqttClient::new(
+        &config.session,
+        &mut mqtt_rx,
+        &mut mqtt_tx,
+        TransportSecurity::PlaintextFixture,
+        None,
+    ) {
+        Ok(client) => client,
+        Err(error) => {
+            esp_println::println!("embedded-sdk MQTT adapter configuration failed: {error}");
+            return;
+        }
+    };
+    let mut backoff = MqttReconnectPolicy::default().backoff();
+    let rng = Rng::new();
+
+    loop {
+        client.transition(MqttState::WaitingForNetwork);
+        let snapshot = match network.wait_ip_ready().await {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                esp_println::println!("embedded-sdk MQTT network state failed: {error}");
+                Timer::after(Duration::from_secs(1)).await;
+                continue;
+            }
+        };
+        if !snapshot.is_dns_ready() {
+            esp_println::println!("embedded-sdk MQTT waiting for DNS");
+            let _ = network.wait_ip_down().await;
+            continue;
+        }
+
+        client.transition(MqttState::ResolvingBroker);
+        let mut addresses = [core::net::Ipv4Addr::UNSPECIFIED; 4];
+        let address_count = match with_timeout(
+            NETWORK_OPERATION_TIMEOUT,
+            network.resolve_ipv4(config.session.hostname().as_str(), &mut addresses),
+        )
+        .await
+        {
+            Ok(Ok(count)) => count,
+            Ok(Err(error)) => {
+                esp_println::println!("embedded-sdk MQTT DNS failed: {error}");
+                client.record_external_failure(MqttErrorKind::Transport);
+                mqtt_backoff(&mut backoff, &rng).await;
+                continue;
+            }
+            Err(_) => {
+                esp_println::println!("embedded-sdk MQTT DNS timed out");
+                client.record_external_failure(MqttErrorKind::Transport);
+                mqtt_backoff(&mut backoff, &rng).await;
+                continue;
+            }
+        };
+
+        client.transition(MqttState::ConnectingTransport);
+        let mut tcp_rx = [0; MQTT_TCP_RX_BUFFER_SIZE];
+        let mut tcp_tx = [0; MQTT_TCP_TX_BUFFER_SIZE];
+        let mut socket = TcpSocket::new(network.stack(), &mut tcp_rx, &mut tcp_tx);
+        let endpoint = IpEndpoint::new(IpAddress::Ipv4(addresses[0]), config.session.port().get());
+        match with_timeout(NETWORK_OPERATION_TIMEOUT, socket.connect(endpoint)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                esp_println::println!("embedded-sdk MQTT TCP failed: {error:?}");
+                client.record_external_failure(MqttErrorKind::Transport);
+                mqtt_backoff(&mut backoff, &rng).await;
+                continue;
+            }
+            Err(_) => {
+                esp_println::println!("embedded-sdk MQTT TCP timed out");
+                client.record_external_failure(MqttErrorKind::Transport);
+                mqtt_backoff(&mut backoff, &rng).await;
+                continue;
+            }
+        }
+
+        let mut connection =
+            match with_timeout(NETWORK_OPERATION_TIMEOUT, client.connect(socket)).await {
+                Ok(Ok(connection)) => connection,
+                Ok(Err(error)) => {
+                    esp_println::println!("embedded-sdk MQTT CONNECT failed: {:?}", error.kind());
+                    mqtt_backoff(&mut backoff, &rng).await;
+                    continue;
+                }
+                Err(_) => {
+                    esp_println::println!("embedded-sdk MQTT CONNECT timed out");
+                    client.record_external_failure(MqttErrorKind::Transport);
+                    mqtt_backoff(&mut backoff, &rng).await;
+                    continue;
+                }
+            };
+        backoff.reset();
+        esp_println::println!(
+            "embedded-sdk MQTT connected: resumed={}, resolved_addresses={address_count}",
+            connection.resumed()
+        );
+
+        let result = select(
+            run_mqtt_connection(
+                &mut connection,
+                &config.telemetry_topic,
+                &config.command_filter,
+            ),
+            network.wait_ip_down(),
+        )
+        .await;
+        drop(connection);
+        match result {
+            Either::First(Ok(())) => {}
+            Either::First(Err(error)) => {
+                esp_println::println!("embedded-sdk MQTT session failed: {error:?}");
+                mqtt_backoff(&mut backoff, &rng).await;
+            }
+            Either::Second(_) => {
+                client.transition(MqttState::WaitingForNetwork);
+                esp_println::println!("embedded-sdk MQTT stopped after IPv4 loss");
+            }
+        }
+    }
+}
+
+async fn run_mqtt_connection<IO>(
+    connection: &mut MqttConnection<'_, '_, IO>,
+    telemetry_topic: &TopicName,
+    command_filter: &TopicFilter,
+) -> Result<(), MqttErrorKind>
+where
+    IO: Read + Write + ErrorType,
+{
+    if !connection.resumed() {
+        connection
+            .subscribe(command_filter, MqttQos::AtLeastOnce)
+            .await
+            .map_err(|error| error.kind())?;
+    }
+
+    loop {
+        let dropped = MQTT_QUEUE_DROPS.swap(0, Ordering::Relaxed);
+        connection.record_queue_drops(dropped);
+        match select(connection.receive(), MQTT_OUTBOUND.receive()).await {
+            Either::First(Ok(message)) => {
+                let _ = message;
+                esp_println::println!("embedded-sdk MQTT command received");
+            }
+            Either::First(Err(error)) => return Err(error.kind()),
+            Either::Second(message) => {
+                connection
+                    .publish(telemetry_topic, message.payload, message.qos)
+                    .await
+                    .map_err(|error| error.kind())?;
+            }
+        }
+    }
+}
+
+async fn mqtt_backoff(backoff: &mut embedded_sdk_mqtt::ReconnectBackoff, rng: &Rng) {
+    let delay_ms = backoff.next_delay_ms(rng.random());
+    esp_println::println!(
+        "embedded-sdk MQTT retry: attempt={}, delay_ms={delay_ms}",
+        backoff.attempts()
+    );
+    Timer::after(Duration::from_millis(u64::from(delay_ms))).await;
 }
 
 async fn run_network_probe(network: EmbassyNetwork<'_>, probe: NetworkProbe) {
@@ -520,4 +763,88 @@ fn development_network_probe() -> Result<Option<NetworkProbe>, &'static str> {
         (Some(_), Some(_)) => Err("NETWORK_TEST_HOST must not be empty"),
         _ => Err("NETWORK_TEST_HOST and NETWORK_TEST_PORT must be set together"),
     }
+}
+
+fn development_mqtt_config() -> Result<Option<MqttDevelopmentConfig>, &'static str> {
+    let host = option_env!("MQTT_HOST");
+    let port = option_env!("MQTT_PORT");
+    let client_id = option_env!("MQTT_CLIENT_ID");
+    let plaintext_fixture = option_env!("MQTT_PLAINTEXT_FIXTURE");
+    let username = option_env!("MQTT_USERNAME");
+    let password = option_env!("MQTT_PASSWORD");
+
+    if host.is_none()
+        && port.is_none()
+        && client_id.is_none()
+        && plaintext_fixture.is_none()
+        && username.is_none()
+        && password.is_none()
+    {
+        return Ok(None);
+    }
+    if username.is_some() || password.is_some() {
+        return Err("credentials are unavailable until verified TLS is implemented");
+    }
+    let (Some(host), Some(port), Some(client_id)) = (host, port, client_id) else {
+        return Err("MQTT_HOST, MQTT_PORT, and MQTT_CLIENT_ID must be set together");
+    };
+    if plaintext_fixture != Some("1") {
+        return Err("set MQTT_PLAINTEXT_FIXTURE=1 for an isolated local test broker");
+    }
+
+    let hostname = BrokerHostname::new(host).map_err(|_| "MQTT_HOST is invalid")?;
+    let port = port
+        .parse::<u16>()
+        .map_err(|_| "MQTT_PORT must be an integer from 1 through 65535")?;
+    let port =
+        BrokerPort::new(port).map_err(|_| "MQTT_PORT must be an integer from 1 through 65535")?;
+    let client_id = ClientId::new(client_id).map_err(|_| "MQTT_CLIENT_ID is invalid")?;
+
+    let mut telemetry_storage = [0; embedded_sdk_mqtt::MAX_TOPIC_LEN];
+    let telemetry_topic = TopicName::new(fixture_topic_text(
+        &mut telemetry_storage,
+        &client_id,
+        "/telemetry",
+    )?)
+    .map_err(|_| "MQTT telemetry topic is invalid")?;
+    let mut command_storage = [0; embedded_sdk_mqtt::MAX_TOPIC_LEN];
+    let command_filter = TopicFilter::new(fixture_topic_text(
+        &mut command_storage,
+        &client_id,
+        "/commands",
+    )?)
+    .map_err(|_| "MQTT command topic is invalid")?;
+    let session = MqttConfig::new(
+        hostname,
+        port,
+        client_id,
+        30,
+        300,
+        MQTT_RX_PACKET_BUFFER_SIZE as u32,
+    )
+    .map_err(|_| "MQTT session limits are invalid")?;
+
+    Ok(Some(MqttDevelopmentConfig {
+        session,
+        telemetry_topic,
+        command_filter,
+    }))
+}
+
+fn fixture_topic_text<'a>(
+    storage: &'a mut [u8; embedded_sdk_mqtt::MAX_TOPIC_LEN],
+    client_id: &ClientId,
+    suffix: &str,
+) -> Result<&'a str, &'static str> {
+    const PREFIX: &[u8] = b"embedded-sdk/test/";
+    let client = client_id.as_str().as_bytes();
+    let suffix = suffix.as_bytes();
+    let len = PREFIX.len() + client.len() + suffix.len();
+    if len > storage.len() {
+        return Err("MQTT fixture topic exceeds its bounded capacity");
+    }
+    storage[..PREFIX.len()].copy_from_slice(PREFIX);
+    storage[PREFIX.len()..PREFIX.len() + client.len()].copy_from_slice(client);
+    storage[PREFIX.len() + client.len()..len].copy_from_slice(suffix);
+    core::str::from_utf8(&storage[..len]).map_err(|_| "MQTT fixture topic is not UTF-8")
 }
