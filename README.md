@@ -39,7 +39,8 @@ rolling device list over its USB serial connection. See the
 [Beacon Scanner Guide](docs/connectivity/beacon-scanner.md).
 
 802.15.4/OpenThread, secure cloud connectivity, board-specific storage
-backends, and OTA remain planned.
+backends, and OTA remain planned. The proposed first cloud-provider slice is
+documented in the [Azure IoT Hub Integration Plan](docs/plans/azure-iot-hub.md).
 
 Portable persistence is described in the [Storage Guide](docs/storage.md).
 
