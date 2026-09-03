@@ -21,14 +21,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo xtask check
 
-  esp32c6:
-    name: ESP32-C6 firmware
+  firmware:
+    name: Registered firmware
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96.0
-          targets: riscv32imac-unknown-none-elf
       - uses: Swatinem/rust-cache@v2
-      - run: cargo xtask build-xiao-esp32c6
+      - run: rustup target add $(cargo xtask targets)
+      - run: cargo xtask build-all

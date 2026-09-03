@@ -8,6 +8,10 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
+[package.metadata.embedded-sdk.firmware]
+board = "xiao-esp32c6"
+variant = "beacon-scanner"
+
 [[bin]]
 name = "xiao-esp32c6-beacon-scanner"
 path = "src/main.rs"
