@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[package.metadata.embedded-sdk.board]
+id = "xiao-esp32c6"
+target = "riscv32imac-unknown-none-elf"
+runner = ["espflash", "flash", "--monitor"]
+
 [dependencies]
 embedded-sdk-bluetooth.workspace = true
 embedded-sdk-core.workspace = true

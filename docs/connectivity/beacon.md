@@ -45,13 +45,13 @@ continues to override the address-derived default.
 Build the default beacon:
 
 ```sh
-cargo xtask build-xiao-esp32c6-beacon
+cargo xtask build xiao-esp32c6/beacon
 ```
 
 Connect a XIAO ESP32C6 over USB, then flash and monitor it:
 
 ```sh
-cargo xtask run-xiao-esp32c6-beacon
+cargo xtask run xiao-esp32c6/beacon
 ```
 
 The ELF is written to:
@@ -90,7 +90,7 @@ BEACON_MINOR=7 \
 BEACON_MEASURED_POWER_DBM=-62 \
 BEACON_INTERVAL_MS=500 \
 BEACON_RADIO_TX_POWER_DBM=-3 \
-cargo xtask run-xiao-esp32c6-beacon
+cargo xtask run xiao-esp32c6/beacon
 ```
 
 Invalid values produce an explicit serial error and prevent advertising. UUID,

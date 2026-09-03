@@ -43,7 +43,7 @@ flash with all four explicit inputs:
 WIFI_SSID='network' WIFI_PASSWORD='passphrase' \
 MQTT_HOST='broker.test' MQTT_PORT='1883' \
 MQTT_CLIENT_ID='xiao-c6-fixture' MQTT_PLAINTEXT_FIXTURE='1' \
-  cargo xtask run-xiao-esp32c6
+  cargo xtask run xiao-esp32c6
 ```
 
 Partial values, empty or invalid host/client values, port zero, any value other
