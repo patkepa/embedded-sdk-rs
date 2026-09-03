@@ -60,9 +60,10 @@ The ELF is written to:
 target/riscv32imac-unknown-none-elf/release/xiao-esp32c6-beacon
 ```
 
-The serial monitor reports the effective local name, UUID, major, minor,
-interval, calibrated RSSI, radio power, and the transition to broadcasting. It
-does not print the device's complete Bluetooth address.
+The serial monitor reports the factory station and Bluetooth MAC addresses, the
+derived static-random advertising address, effective local name, UUID, major,
+minor, interval, calibrated RSSI, radio power, and the transition to
+broadcasting.
 
 ## Deployment configuration
 
