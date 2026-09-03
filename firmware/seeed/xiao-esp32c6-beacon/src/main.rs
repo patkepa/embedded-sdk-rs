@@ -19,7 +19,10 @@ use embedded_sdk_platform_esp32c6::{
     start_embassy,
 };
 use esp_backtrace as _;
-use esp_hal::gpio::{Level, Output, OutputConfig};
+use esp_hal::{
+    efuse::{self, InterfaceMacAddress},
+    gpio::{Level, Output, OutputConfig},
+};
 use trouble_host::prelude::*;
 
 const DEFAULT_BEACON_UUID: &str = "7a1e1000-4c2a-4f66-a1d4-3f55b55a1000";
@@ -359,6 +362,13 @@ async fn advertise_forever<C: Controller>(
                 "embedded-sdk beacon boot: board={}, chip={}",
                 HARDWARE.board,
                 HARDWARE.chip
+            );
+            let station_mac = efuse::interface_mac_address(InterfaceMacAddress::Station);
+            let bluetooth_mac = efuse::interface_mac_address(InterfaceMacAddress::Bluetooth);
+            esp_println::println!(
+                "embedded-sdk beacon mac: station={}, bluetooth={}",
+                station_mac,
+                bluetooth_mac
             );
             esp_println::println!(
                 "embedded-sdk beacon identity: name={}, uuid={}, major={}, minor={}",
