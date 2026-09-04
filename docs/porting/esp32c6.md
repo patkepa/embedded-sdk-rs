@@ -163,5 +163,7 @@ dependencies must not be added to portable crates.
 2. Add GPIO and board-revision tests.
 3. Validate DHCP, DNS, TCP, AP-loss recovery, and BLE coexistence on hardware.
 4. Add authenticated BLE provisioning and persistent bonding.
-5. Add IEEE 802.15.4 and isolate OpenThread FFI behind its platform layer.
+5. Implement the ESP32-C6 vertical slice from the
+   [OpenThread Integration Plan](../plans/openthread.md), keeping the shared
+   stack and portable Thread model outside the platform port.
 6. Define flash partitions before persistent configuration or OTA is added.

@@ -74,8 +74,8 @@ embedded-sdk-rs/
 │   │   ├── ble-core/             # Application-facing BLE services
 │   │   ├── ble-trouble/          # TrouBLE host integration
 │   │   ├── thread-core/
-│   │   ├── openthread-sys/       # Audited FFI boundary
-│   │   └── openthread-platform/  # OpenThread PAL implementation
+│   │   ├── thread-openthread/    # Shared safe OpenThread adapter
+│   │   └── thread-spinel/        # Optional external-RCP transport
 │   │
 │   ├── protocols/
 │   │   ├── mqtt/
@@ -322,16 +322,29 @@ introduced.
 
 ### OpenThread
 
-OpenThread integration should be an isolated FFI subsystem:
+OpenThread uses one shared stack above replaceable local-radio or Spinel RCP
+adapters. `thread-core` owns portable datasets, lifecycle, roles, diagnostics,
+and focused controller capabilities. `thread-openthread` adapts a reviewed,
+pinned upstream Rust OpenThread integration while keeping native code, unsafe
+FFI, and pre-1.0 types outside the portable facade.
 
-- `openthread-sys` owns generated bindings, native build integration, and the
-  smallest possible unsafe surface.
-- `openthread-platform` implements the OpenThread Platform Abstraction Layer.
-- The relevant platform port supplies radio, time, entropy, persistent settings,
-  reset, logging, and optional bus integration.
-- Board packages select radio configuration, storage regions, regulatory
-  settings, and device-specific identifiers.
-- FFI callbacks must have documented ownership, threading, and lifetime rules.
+The OpenThread instance has one logical runner and is accessed from application
+tasks through bounded commands and watched state. Platform ports supply radio,
+factory EUI-64 identity, qualified entropy, reset information, logging, and
+flash primitives. OpenThread settings use a dedicated synchronous, multi-value
+adapter rather than the SDK's asynchronous single-value key-value contract.
+Board packages select storage regions, regulatory settings, RF configuration,
+and coexistence constraints; firmware selects the device role, feature profile,
+resources, task priority, and commissioning policy.
+
+OpenThread remains authoritative for Thread IPv6 addresses, routes, DNS, and
+network data. Native UDP, DNS, and SRP adapters form the first application data
+path. A bare-IPv6 `embassy-net` bridge is optional and must continuously mirror
+OpenThread address and route changes before it is considered supported.
+
+The complete decisions and staged implementation are recorded in
+[ADR 0004](../adr/0004-portable-openthread.md) and the
+[OpenThread Integration Plan](../plans/openthread.md).
 
 ## Cloud Architecture
 
