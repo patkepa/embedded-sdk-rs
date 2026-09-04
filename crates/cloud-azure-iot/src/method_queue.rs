@@ -176,7 +176,6 @@ impl<const DEPTH: usize, const METHOD_NAME: usize, const PAYLOAD: usize>
     pub const fn new(timeout_ms: u32) -> Result<Self, DirectMethodQueueError> {
         if DEPTH == 0
             || METHOD_NAME == 0
-            || PAYLOAD == 0
             || METHOD_NAME > MAX_METHOD_FIELD_CAPACITY
             || PAYLOAD > MAX_METHOD_FIELD_CAPACITY
             || timeout_ms == 0

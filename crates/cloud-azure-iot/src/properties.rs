@@ -108,6 +108,16 @@ impl<'a> PropertyBag<'a> {
         Ok(bag)
     }
 
+    pub(crate) const fn from_validated(encoded: &'a str) -> Self {
+        Self { encoded }
+    }
+
+    /// Returns the validated percent-encoded property bag without decoding it.
+    #[must_use]
+    pub const fn as_encoded_str(self) -> &'a str {
+        self.encoded
+    }
+
     /// Returns whether the message has no properties.
     #[must_use]
     pub const fn is_empty(self) -> bool {

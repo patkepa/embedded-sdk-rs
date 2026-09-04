@@ -6,6 +6,7 @@
 extern crate std;
 
 mod c2d;
+mod c2d_queue;
 mod client;
 mod config;
 mod encode;
@@ -17,6 +18,9 @@ mod sas;
 mod twin;
 
 pub use c2d::{CloudToDeviceMessage, parse_cloud_to_device};
+pub use c2d_queue::{
+    CloudToDeviceQueue, CloudToDeviceQueueError, MAX_C2D_FIELD_CAPACITY, QueuedCloudToDevice,
+};
 pub use client::{
     HubCapabilities, HubClient, HubError, HubEvent, HubSession, HubSessionError, HubSessionEvent,
     InboundRejection, OutboundOperation, SessionDisposition, Subscription, SubscriptionKind,

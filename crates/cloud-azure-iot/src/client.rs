@@ -993,7 +993,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        DIRECT_METHOD_OVERLOAD_STATUS, DIRECT_METHOD_TIMEOUT_STATUS, DeviceId,
+        CloudToDeviceQueue, DIRECT_METHOD_OVERLOAD_STATUS, DIRECT_METHOD_TIMEOUT_STATUS, DeviceId,
         DirectMethodDispatch, DirectMethodQueue, DirectMethodQueueError, HubHostname,
     };
 
@@ -1381,18 +1381,33 @@ mod tests {
         let mut hub = HubClient::new(config(), HubCapabilities::CLOUD_TO_DEVICE);
         let mqtt = MockSession::new([inbound]);
         let mut session = HubSession::new(&mut hub, mqtt, SessionDisposition::Resumed).unwrap();
+        let mut queue = CloudToDeviceQueue::<1, 64, 16>::new().unwrap();
 
-        assert!(matches!(
-            block_on(session.poll()).unwrap(),
-            HubSessionEvent::Inbound(HubEvent::CloudToDevice(message))
-                if message.payload() == b"on"
-        ));
+        let HubSessionEvent::Inbound(HubEvent::CloudToDevice(message)) =
+            block_on(session.poll()).unwrap()
+        else {
+            panic!("expected cloud-to-device message");
+        };
+        queue.enqueue(message).unwrap();
         assert!(matches!(
             block_on(session.poll()),
             Err(HubSessionError::InboundAcceptancePending)
         ));
         assert_eq!(session.snapshot().inbound_accepted, 0);
         block_on(session.accept_inbound()).unwrap();
+        let queued = queue.begin_next().unwrap();
+        assert_eq!(queued.payload(), b"on");
+        assert_eq!(
+            queued
+                .properties()
+                .iter()
+                .next()
+                .unwrap()
+                .unwrap()
+                .encoded_name(),
+            "command"
+        );
+        queue.complete_active().unwrap();
 
         let (hub, mqtt) = session.into_parts();
         assert_eq!(hub.snapshot().inbound_accepted, 1);
