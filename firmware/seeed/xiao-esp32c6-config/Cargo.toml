@@ -1,23 +1,19 @@
 [package]
-name = "embedded-sdk"
-description = "Portable facade for the embedded-sdk workspace"
+name = "xiao-esp32c6-config"
+description = "Bounded product configuration for the XIAO ESP32C6 reference firmware"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false
 
 [dependencies]
-embedded-sdk-bluetooth.workspace = true
 embedded-sdk-config.workspace = true
-embedded-sdk-core.workspace = true
-embedded-sdk-networking.workspace = true
 embedded-sdk-mqtt.workspace = true
 embedded-sdk-provisioning.workspace = true
-embedded-sdk-runtime.workspace = true
-embedded-sdk-storage.workspace = true
-embedded-sdk-telemetry.workspace = true
 embedded-sdk-wifi.workspace = true
+zeroize.workspace = true
 
 [lints]
 workspace = true

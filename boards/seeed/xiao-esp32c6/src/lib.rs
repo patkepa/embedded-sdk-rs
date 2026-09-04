@@ -24,6 +24,23 @@ pub const HARDWARE: HardwareDescriptor = XiaoEsp32c6::HARDWARE;
 /// Default BLE GAP name used by the reference firmware.
 pub const BLUETOOTH_DEVICE_NAME: &str = "XIAO ESP32C6 SDK";
 
+/// Version of the checked-in 4 MiB flash partition layout.
+pub const PARTITION_LAYOUT_VERSION: u16 = 1;
+/// Physical internal flash capacity fitted to the supported XIAO ESP32C6.
+pub const FLASH_CAPACITY_BYTES: u32 = 0x40_0000;
+/// ESP-IDF partition table offset used by the bootloader and application.
+pub const PARTITION_TABLE_OFFSET: u32 = 0x8000;
+/// Start of the factory application partition.
+pub const FACTORY_APP_OFFSET: u32 = 0x1_0000;
+/// Capacity of each factory and future OTA application slot.
+pub const APP_PARTITION_BYTES: u32 = 0x14_0000;
+/// Start of the board-owned provisioning storage partition.
+pub const PROVISIONING_STORAGE_OFFSET: u32 = 0x3d_0000;
+/// Capacity of the board-owned provisioning storage partition.
+pub const PROVISIONING_STORAGE_BYTES: u32 = 0x2_0000;
+/// Physical erase sector used to align every data partition.
+pub const FLASH_ERASE_BYTES: u32 = 0x1000;
+
 /// On-board yellow user LED.
 pub const USER_LED_GPIO: u8 = 15;
 /// Boot button, active low when pressed.
@@ -59,7 +76,11 @@ pub const RF_SWITCH_SELECT_GPIO: u8 = 14;
 mod tests {
     use embedded_sdk_core::Capabilities;
 
-    use super::{BLUETOOTH_DEVICE_NAME, HARDWARE, I2C_SCL_GPIO, I2C_SDA_GPIO, USER_LED_GPIO};
+    use super::{
+        APP_PARTITION_BYTES, BLUETOOTH_DEVICE_NAME, FACTORY_APP_OFFSET, FLASH_CAPACITY_BYTES,
+        FLASH_ERASE_BYTES, HARDWARE, I2C_SCL_GPIO, I2C_SDA_GPIO, PROVISIONING_STORAGE_BYTES,
+        PROVISIONING_STORAGE_OFFSET, USER_LED_GPIO,
+    };
 
     #[test]
     fn board_exposes_esp32c6_radios() {
@@ -77,5 +98,18 @@ mod tests {
     #[test]
     fn board_bluetooth_name_fits_legacy_gap_data() {
         assert!(BLUETOOTH_DEVICE_NAME.len() <= embedded_sdk_bluetooth::MAX_DEVICE_NAME_LEN);
+    }
+
+    #[test]
+    fn partition_contract_is_aligned_and_inside_the_supported_flash() {
+        assert_eq!(FACTORY_APP_OFFSET % 0x1_0000, 0);
+        assert_eq!(APP_PARTITION_BYTES % FLASH_ERASE_BYTES, 0);
+        assert_eq!(PROVISIONING_STORAGE_OFFSET % FLASH_ERASE_BYTES, 0);
+        assert_eq!(PROVISIONING_STORAGE_BYTES % FLASH_ERASE_BYTES, 0);
+        const {
+            assert!(
+                PROVISIONING_STORAGE_OFFSET + PROVISIONING_STORAGE_BYTES <= FLASH_CAPACITY_BYTES
+            );
+        }
     }
 }

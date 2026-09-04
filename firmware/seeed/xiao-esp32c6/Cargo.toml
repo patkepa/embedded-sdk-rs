@@ -53,6 +53,7 @@ trouble-host = { workspace = true, features = [
     "gatt",
     "peripheral",
 ] }
+xiao-esp32c6-config.workspace = true
 
 [lints]
 workspace = true

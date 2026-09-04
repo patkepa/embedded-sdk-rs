@@ -12,6 +12,8 @@ pub use embedded_sdk_core as core;
 pub use embedded_sdk_mqtt as mqtt;
 /// Portable link and IP configuration state.
 pub use embedded_sdk_networking as networking;
+/// Transport-neutral device provisioning contracts and transaction model.
+pub use embedded_sdk_provisioning as provisioning;
 /// Service lifecycle and health primitives.
 pub use embedded_sdk_runtime as runtime;
 /// Persistent key-value and raw flash storage contracts.

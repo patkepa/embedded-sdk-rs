@@ -11,11 +11,13 @@ repository.workspace = true
 default = ["bluetooth", "coex", "wifi"]
 bluetooth = ["dep:embedded-sdk-bluetooth", "esp-radio/ble"]
 coex = ["bluetooth", "esp-radio/coex", "wifi"]
+storage = ["dep:embedded-sdk-storage", "dep:esp-storage"]
 wifi = ["dep:embedded-sdk-wifi", "esp-radio/wifi"]
 
 [dependencies]
 embedded-sdk-bluetooth = { workspace = true, optional = true }
 embedded-sdk-core.workspace = true
+embedded-sdk-storage = { workspace = true, optional = true }
 embedded-sdk-wifi = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
@@ -31,6 +33,7 @@ esp-rtos = { workspace = true, features = [
     "esp-radio",
     "esp32c6",
 ] }
+esp-storage = { workspace = true, features = ["critical-section", "esp32c6"], optional = true }
 
 [lints]
 workspace = true

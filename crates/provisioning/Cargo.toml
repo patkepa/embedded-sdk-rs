@@ -1,0 +1,20 @@
+[package]
+name = "embedded-sdk-provisioning"
+description = "Transport-neutral device provisioning contracts and transaction model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+embedded-sdk-config.workspace = true
+embedded-sdk-storage.workspace = true
+minicbor.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+embassy-futures.workspace = true
+
+[lints]
+workspace = true

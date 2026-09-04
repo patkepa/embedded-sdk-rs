@@ -17,10 +17,12 @@ default-members = [
     "crates/networking-embassy-net",
     "crates/mqtt",
     "crates/mqtt-minimq",
+    "crates/provisioning",
     "crates/runtime",
     "crates/storage",
     "crates/telemetry",
     "crates/wifi",
+    "firmware/seeed/xiao-esp32c6-config",
     "tests/host",
     "tools/xtask",
 ]
@@ -41,12 +43,14 @@ embedded-sdk-networking = { path = "crates/networking" }
 embedded-sdk-networking-embassy-net = { path = "crates/networking-embassy-net" }
 embedded-sdk-mqtt = { path = "crates/mqtt" }
 embedded-sdk-mqtt-minimq = { path = "crates/mqtt-minimq" }
+embedded-sdk-provisioning = { path = "crates/provisioning" }
 embedded-sdk-runtime = { path = "crates/runtime" }
 embedded-sdk-storage = { path = "crates/storage" }
 embedded-sdk-telemetry = { path = "crates/telemetry" }
 embedded-sdk-wifi = { path = "crates/wifi" }
 embedded-sdk-platform-esp32c6 = { path = "ports/espressif/esp32c6", default-features = false }
 embedded-sdk-board-xiao-esp32c6 = { path = "boards/seeed/xiao-esp32c6" }
+xiao-esp32c6-config = { path = "firmware/seeed/xiao-esp32c6-config" }
 
 embassy-executor = "0.10.0"
 embassy-futures = "0.1.2"
@@ -69,9 +73,11 @@ esp-hal = { version = "=1.1.1", default-features = false }
 esp-println = "0.17.0"
 esp-radio = { version = "=0.18.0", default-features = false }
 esp-rtos = { version = "=0.3.0", default-features = false }
+esp-storage = { version = "=0.9.0", default-features = false }
 sequential-storage = { version = "=8.0.1", default-features = false }
 static_cell = "2.1.1"
 minimq = { version = "=0.13.0", default-features = false }
+minicbor = { version = "=2.3.0", default-features = false }
 trouble-host = { version = "=0.6.0", default-features = false }
 zeroize = { version = "=1.9.0", default-features = false }
 

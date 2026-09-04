@@ -87,6 +87,15 @@ not renumber or reuse them for different data. Teams should maintain a product
 key registry and reserve namespace ranges for independently versioned
 components.
 
+### SDK key registry
+
+| Namespace | Records | Owner |
+| --- | --- | --- |
+| `0x0001` | `1` state, `2` slot A, `3` slot B | `embedded-sdk-provisioning` |
+
+Registry entries are permanent once published. New record meanings must use a
+new number; existing numbers must not be repurposed.
+
 Application values need their own schema version and migration policy. The
 storage crate treats values as opaque bytes and does not couple them to
 `embedded-sdk-config::SchemaVersion` or a particular serializer. Upgrading the
@@ -103,5 +112,6 @@ element or platform-backed flash encryption and authenticated value format.
 
 The portable capability `Capabilities::PERSISTENT_STORAGE` should be
 advertised only after a platform and board expose a tested, non-overlapping
-region. The current XIAO ESP32-C6 target does not advertise it yet because its
-partition layout has not been committed.
+region. The XIAO ESP32-C6 partition is checked in, but the board does not yet
+advertise the capability because repeated-write, reboot, and power-interruption
+HIL evidence is still pending.

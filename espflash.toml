@@ -1,0 +1,6 @@
+[idf]
+partition_table = "boards/seeed/xiao-esp32c6/partitions.csv"
+target_app_partition = "factory"
+
+[flash]
+size = "4MB"

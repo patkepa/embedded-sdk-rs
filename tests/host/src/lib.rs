@@ -10,6 +10,10 @@ mod tests {
             BrokerHostname, BrokerPort, ClientId, Config as MqttConfig, TopicFilter, TopicName,
         },
         networking::{DnsServers, Ipv4Configuration, LinkState, NetworkSnapshot},
+        provisioning::{
+            Authority, PROVISIONING_NAMESPACE, Request, RequestId, SLOT_A_KEY, SLOT_B_KEY,
+            STATE_KEY, SessionContext, SessionId,
+        },
         storage::Key,
         wifi::{Authentication, Passphrase, Ssid, StationConfig},
     };
@@ -68,6 +72,23 @@ mod tests {
 
         assert_eq!(key.to_raw(), 0x0100_0002);
         assert_eq!(Key::from_raw(key.to_raw()), key);
+    }
+
+    #[test]
+    fn facade_exposes_transport_neutral_provisioning_model() {
+        let session =
+            SessionContext::authenticated(SessionId::new(11).unwrap(), Authority::HilFixture, true);
+        let request = Request::Status {
+            request_id: RequestId::new(4).unwrap(),
+        };
+
+        assert_eq!(session.authority(), Authority::HilFixture);
+        assert!(session.has_physical_presence());
+        assert_eq!(request.request_id().get(), 4);
+        assert_eq!(PROVISIONING_NAMESPACE, 0x0001);
+        assert_eq!(STATE_KEY.to_raw(), 0x0001_0001);
+        assert_eq!(SLOT_A_KEY.to_raw(), 0x0001_0002);
+        assert_eq!(SLOT_B_KEY.to_raw(), 0x0001_0003);
     }
 
     #[test]
