@@ -16,6 +16,7 @@ mod methods;
 mod properties;
 mod requests;
 mod sas;
+mod supervisor;
 mod telemetry_queue;
 mod twin;
 
@@ -49,6 +50,9 @@ pub use requests::{RequestId, RequestIdGenerator};
 pub use sas::{
     MAX_SAS_TOKEN_LEN, MAX_SYMMETRIC_KEY_LEN, SasError, SasPassword, SasToken, SymmetricKey,
     generate_device_sas,
+};
+pub use supervisor::{
+    ConnectionFailure, HubRecoverySupervisor, RecoveryAction, SupervisorConfigError,
 };
 pub use telemetry_queue::{
     MAX_TELEMETRY_PAYLOAD_CAPACITY, QueuedTelemetry, TelemetryDispatch, TelemetryQueue,
