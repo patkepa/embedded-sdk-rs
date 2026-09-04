@@ -331,6 +331,15 @@ pub enum SessionEvent<'a> {
     Progress,
 }
 
+/// Operation retained by a backend across a transport reconnect.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionPendingOperation {
+    /// An outbound QoS 1 publication is being replayed until PUBACK.
+    Publish(OperationId),
+    /// A subscription request is being replayed until SUBACK.
+    Subscribe(OperationId),
+}
+
 /// Behavioral capabilities of a concrete live MQTT session.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SessionCapabilities(u8);
@@ -378,6 +387,9 @@ pub trait MqttSession {
 
     /// Reports acknowledgment behavior required by provider drivers.
     fn capabilities(&self) -> SessionCapabilities;
+
+    /// Returns the operation replayed from the previous transport, if any.
+    fn pending_operation(&self) -> Option<SessionPendingOperation>;
 
     /// Returns the stable category for a concrete failure.
     fn classify_error(error: &Self::Error) -> ErrorKind;

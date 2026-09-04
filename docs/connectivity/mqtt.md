@@ -22,7 +22,8 @@ CONNECT/CONNACK, QoS 0/1 PUBLISH/PUBACK, single-filter SUBSCRIBE/SUBACK,
 PINGREQ/PINGRESP, DISCONNECT, persistent sessions, QoS 1 reconnect replay,
 and explicit application-controlled acknowledgment of inbound QoS 1 messages.
 It implements the portable `MqttSession` contract, including correlated
-PUBLISH/SUBSCRIBE acknowledgments and manual inbound PUBACK. Provider drivers
+PUBLISH/SUBSCRIBE acknowledgments, retained-operation introspection, and manual
+inbound PUBACK. Provider drivers
 can reject a backend whose advertised behavior would weaken their delivery
 semantics; the Azure driver requires manual inbound acknowledgment for C2D
 and twin delivery. Azure direct-method requests are QoS 0, so a method-only
@@ -130,6 +131,8 @@ not claimed from compile output.
 - A broker reconnect resumes the MQTT session when the broker retained it;
   otherwise firmware restores its one subscription.
 - In-flight QoS state survives transport reconnect only in live RAM.
+- A provider reattaching after reconnect must explicitly recover the retained
+  operation; silent attachment with replay state is rejected.
 - Heartbeat and BLE tasks never wait on the MQTT queue.
 
 ## Verification boundary

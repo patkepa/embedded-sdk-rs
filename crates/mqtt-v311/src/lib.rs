@@ -11,8 +11,8 @@ use core::{convert::Infallible, fmt};
 
 use embedded_io_async::{Read, Write};
 use embedded_sdk_mqtt::{
-    Config, ErrorKind, MqttSession, QoS, SessionCapabilities, SessionConfig, Snapshot, TopicFilter,
-    TopicName,
+    Config, ErrorKind, MqttSession, QoS, SessionCapabilities, SessionConfig,
+    SessionPendingOperation, Snapshot, TopicFilter, TopicName,
 };
 
 pub use embedded_sdk_mqtt::{InboundPublish, OperationId, SessionEvent as Event};
@@ -662,6 +662,18 @@ where
             .union(SessionCapabilities::CORRELATED_SUBSCRIPTION_ACK)
     }
 
+    fn pending_operation(&self) -> Option<SessionPendingOperation> {
+        match self.client.pending_operation() {
+            PendingOperation::None => None,
+            PendingOperation::Publish(operation) => {
+                Some(SessionPendingOperation::Publish(operation))
+            }
+            PendingOperation::Subscribe(operation) => {
+                Some(SessionPendingOperation::Subscribe(operation))
+            }
+        }
+    }
+
     fn classify_error(error: &Self::Error) -> ErrorKind {
         error.kind()
     }
@@ -1019,9 +1031,14 @@ mod tests {
             block_on(client.connect(second, TransportSecurity::PlaintextFixture, None)).unwrap();
         assert_eq!(connection.connect_event(), ConnectEvent::ResumedSession);
         assert_eq!(
+            MqttSession::pending_operation(&connection),
+            Some(SessionPendingOperation::Publish(operation))
+        );
+        assert_eq!(
             block_on(connection.poll()).unwrap(),
             Event::Published(operation)
         );
+        assert_eq!(MqttSession::pending_operation(&connection), None);
         let second = connection.into_transport();
         assert!(second.tx.contains(&0x3a));
         assert_eq!(client.pending_operation(), PendingOperation::None);

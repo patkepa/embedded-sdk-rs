@@ -18,10 +18,11 @@
   subscription restoration, telemetry acknowledgments, twin resynchronization,
   reported-property correlation, direct-method responses with owned request
   IDs, a bounded method dispatcher with deadlines/overload responses, and
-  delayed inbound PUBACK or disconnect-for-redelivery rejection. Final
-  firmware registration, entropy/HIL and resource validation, telemetry
-  queueing, protected credential loading, firmware integration, and live IoT
-  Hub gates remain open
+  delayed inbound PUBACK or disconnect-for-redelivery rejection. A bounded
+  RAM telemetry FIFO now retains active entries across MQTT replay and Azure
+  provider reattachment. Final firmware registration, entropy/HIL and resource
+  validation, durable telemetry, protected credential loading, firmware
+  integration, and live IoT Hub gates remain open
 - Branch: `feat/cloud-iot-hub`
 - Initial target: Seeed Studio XIAO ESP32C6
 - Cloud service: Azure IoT Hub
@@ -36,10 +37,10 @@
 | Area | Implemented | Still open |
 | --- | --- | --- |
 | Architecture | Provider boundary, MQTT-version boundary, trusted-time/secret-lifetime, bounded MQTT 3.1.1 backend, and experimental TLS 1.2 backend ADRs | X.509 signer and production TLS promotion decisions |
-| Portable MQTT | Explicit MQTT 3.1.1/MQTT 5 configuration, separate session semantics, 128-byte client identities, a capability-reporting async `MqttSession` contract, and bounded MQTT 3.1.1 adapter with QoS 1 replay, correlated operation events, manual inbound ACK, Mosquitto interoperability, and authenticated MQTT-over-TLS composition | Hermetic CI broker gate and determine whether a safe subset can also be implemented by the MQTT 5 adapter |
+| Portable MQTT | Explicit MQTT 3.1.1/MQTT 5 configuration, separate session semantics, 128-byte client identities, a capability-reporting async `MqttSession` contract with retained-operation introspection, and bounded MQTT 3.1.1 adapter with QoS 1 replay, correlated operation events, manual inbound ACK, Mosquitto interoperability, and authenticated MQTT-over-TLS composition | Hermetic CI broker gate and determine whether a safe subset can also be implemented by the MQTT 5 adapter |
 | Cloud core | Allocation-free capabilities, lifecycle/error domains, and health snapshot | Extend only from proven provider needs |
 | Azure identity | Bounded hub/device configuration, MQTT client ID, username, port, and persistent-session translation | Module identities and DPS identities |
-| Azure operations | Telemetry properties; C2D parsing plus a compile-time-bounded owned payload/property FIFO; direct-method request parsing and QoS 1 response correlation with fixed-capacity owned request IDs; a bounded method FIFO with caller-clock deadlines and 429/504 handling; QoS 1 capacity rejection by disconnecting without PUBACK; twin GET and reported-PATCH correlation; desired-version parsing; capability-gated inbound routing; four-filter fresh-session setup; reconnect full-twin synchronization; and an async session coordinator | Telemetry queue, reference-firmware delivery integration, product method-handler execution, skipped/stale desired-version policy, and application activation/reporting integration |
+| Azure operations | Telemetry properties plus a compile-time-bounded RAM FIFO with local tokens, expiration, and retained PUBACK recovery; C2D parsing plus a bounded owned payload/property FIFO; direct-method request parsing and QoS 1 response correlation with fixed-capacity owned request IDs; a bounded method FIFO with caller-clock deadlines and 429/504 handling; QoS 1 capacity rejection by disconnecting without PUBACK; twin GET and reported-PATCH correlation; desired-version parsing; capability-gated inbound routing; four-filter fresh-session setup; reconnect full-twin synchronization; and an async session coordinator | Durable telemetry, reference-firmware delivery integration, product method-handler execution, skipped/stale desired-version policy, and application activation/reporting integration |
 | Authentication | Trusted-time contract, credential lease, zeroizing secret storage, secure-random contract, device-key base64 decoding, HMAC-SHA256 SAS token generation | Protected key source, production time provider, X.509 identity, rotation integration |
 | TLS transport | `no_std` rustls unbuffered stream with caller-owned record/plaintext buffers, explicit trust roots and time, DNS-name SNI/verification, TLS 1.2-only Azure RSA/AES-GCM policy, target compilation, an in-process fragmented TLS peer, MQTT 3.1.1 composition, host negative verification, and an opt-in ESP32-C6 RNG/getrandom bridge | Final-binary RNG registration and entropy validation, heap/stack measurements, HIL, X.509 client auth, and alpha-provider review |
 | Verification | Host unit/golden tests, fragmented-stream MQTT session tests, Mosquitto 2.0.22 MQTT 3.1.1 QoS 1 interoperability, TLS 1.2 success/SNI/encrypted-I/O, full Azure-config/SAS/TLS/MQTT/telemetry/PUBACK composition, async provider synchronization/acceptance tests, and host TLS trust/hostname/time/cipher/corruption/truncation rejection tests, strict linting of affected crates, bare-metal RISC-V compilation | Fuzzing, live IoT Hub, ESP32-C6 HIL, and resource measurements |
@@ -655,6 +656,16 @@ Queue policy must be explicit per message class:
 The telemetry topic encoder owns Azure property-bag percent encoding. It should
 provide helpers for JSON content metadata without requiring that all telemetry
 be JSON.
+
+The current `TelemetryQueue<DEPTH, PAYLOAD>` owns complete prevalidated topics
+and copied payloads, assigns local correlation tokens, classifies stale entries
+against a caller-supplied monotonic time, and keeps the active slot reserved
+until terminal completion. `MqttSession::pending_operation` and
+`HubSession::recover_telemetry` bind an MQTT 3.1.1 replayed packet identifier
+back to that active entry after a transport reconnect. A normal session attach
+fails explicitly when retained work is present but no provider recovery path
+was selected. This queue is RAM-only and must not be presented as power-loss
+safe; persistent outbox work remains a later phase.
 
 ## Cloud-to-device message flow
 

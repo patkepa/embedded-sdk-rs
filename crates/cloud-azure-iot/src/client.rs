@@ -5,15 +5,15 @@ use embedded_sdk_cloud_core::{
 };
 use embedded_sdk_mqtt::{
     ErrorKind as MqttErrorKind, MqttSession, OperationId, QoS, SessionCapabilities, SessionEvent,
-    TopicFilter, TopicName,
+    SessionPendingOperation, TopicFilter, TopicName,
 };
 
 use crate::{
     CloudToDeviceMessage, CodecError, DesiredPropertiesPatch, DirectMethodRequest, HubConfig,
-    MethodRequestId, RequestId, RequestIdGenerator, TwinResponse, desired_properties_filter,
-    direct_method_filter, direct_method_response_topic, parse_cloud_to_device,
-    parse_desired_properties_patch, parse_direct_method, parse_twin_response,
-    reported_properties_topic, twin_get_topic, twin_response_filter,
+    MethodRequestId, QueuedTelemetry, RequestId, RequestIdGenerator, TwinResponse,
+    desired_properties_filter, direct_method_filter, direct_method_response_topic,
+    parse_cloud_to_device, parse_desired_properties_patch, parse_direct_method,
+    parse_twin_response, reported_properties_topic, twin_get_topic, twin_response_filter,
 };
 
 /// Azure IoT Hub operations enabled for one device session.
@@ -246,6 +246,10 @@ pub enum HubSessionError<E> {
     SubscriptionRejected,
     /// The MQTT backend cannot preserve required Azure delivery semantics.
     UnsupportedBackend,
+    /// The MQTT backend is replaying an operation that needs explicit provider recovery.
+    RecoveryRequired,
+    /// Retained MQTT state did not match the operation the provider expected to recover.
+    RecoveryMismatch,
 }
 
 impl<E> HubSessionError<E> {
@@ -260,6 +264,7 @@ impl<E> HubSessionError<E> {
             }
             Self::UnexpectedAcknowledgement | Self::SubscriptionRejected => ErrorKind::Protocol,
             Self::UnsupportedBackend => ErrorKind::Configuration,
+            Self::RecoveryRequired | Self::RecoveryMismatch => ErrorKind::Protocol,
         }
     }
 }
@@ -284,6 +289,12 @@ impl<E: fmt::Debug> fmt::Display for HubSessionError<E> {
             }
             Self::UnsupportedBackend => {
                 formatter.write_str("MQTT backend lacks required Azure IoT capabilities")
+            }
+            Self::RecoveryRequired => {
+                formatter.write_str("retained MQTT operation requires Azure recovery")
+            }
+            Self::RecoveryMismatch => {
+                formatter.write_str("retained MQTT operation does not match Azure recovery")
             }
         }
     }
@@ -329,6 +340,45 @@ impl<'hub, S: MqttSession> HubSession<'hub, S> {
         mqtt: S,
         disposition: SessionDisposition,
     ) -> Result<Self, HubSessionError<S::Error>> {
+        if mqtt.pending_operation().is_some() {
+            return Err(HubSessionError::RecoveryRequired);
+        }
+        Self::attach(hub, mqtt, disposition, None)
+    }
+
+    /// Reattaches to a QoS 1 telemetry publish replayed after transport recovery.
+    ///
+    /// The caller must keep the corresponding telemetry queue slot active until
+    /// [`HubSessionEvent::OutboundAcknowledged`] is returned. Service-correlated
+    /// twin operations require a new request and cannot use this recovery path.
+    pub fn recover_telemetry(
+        hub: &'hub mut HubClient,
+        mqtt: S,
+        disposition: SessionDisposition,
+    ) -> Result<Self, HubSessionError<S::Error>> {
+        if !hub.capabilities().contains(HubCapabilities::TELEMETRY) {
+            return Err(HubSessionError::RecoveryMismatch);
+        }
+        let Some(SessionPendingOperation::Publish(operation)) = mqtt.pending_operation() else {
+            return Err(HubSessionError::RecoveryMismatch);
+        };
+        Self::attach(
+            hub,
+            mqtt,
+            disposition,
+            Some(PendingMqttOperation::Publish {
+                operation,
+                purpose: OutboundOperation::Telemetry,
+            }),
+        )
+    }
+
+    fn attach(
+        hub: &'hub mut HubClient,
+        mqtt: S,
+        disposition: SessionDisposition,
+        pending: Option<PendingMqttOperation>,
+    ) -> Result<Self, HubSessionError<S::Error>> {
         let publishes = hub.capabilities().contains(HubCapabilities::TELEMETRY)
             || hub.capabilities().contains(HubCapabilities::DIRECT_METHODS)
             || hub.capabilities().contains(HubCapabilities::TWINS);
@@ -359,7 +409,7 @@ impl<'hub, S: MqttSession> HubSession<'hub, S> {
         Ok(Self {
             hub,
             mqtt,
-            pending: None,
+            pending,
             pending_inbound: None,
             subscriptions_accepted,
         })
@@ -416,6 +466,31 @@ impl<'hub, S: MqttSession> HubSession<'hub, S> {
             .telemetry_topic(topic_scratch)
             .map_err(HubError::from)?;
         let operation = match self.mqtt.publish(&topic, payload, QoS::AtLeastOnce).await {
+            Ok(Some(operation)) => operation,
+            Ok(None) => return Err(HubSessionError::UnexpectedAcknowledgement),
+            Err(error) => return Err(self.observe_mqtt(error)),
+        };
+        self.pending = Some(PendingMqttOperation::Publish {
+            operation,
+            purpose: OutboundOperation::Telemetry,
+        });
+        Ok(operation)
+    }
+
+    /// Publishes the active entry of a bounded telemetry queue at QoS 1.
+    pub async fn publish_queued_telemetry<const PAYLOAD: usize>(
+        &mut self,
+        telemetry: &QueuedTelemetry<PAYLOAD>,
+    ) -> Result<OperationId, HubSessionError<S::Error>> {
+        self.ensure_idle()?;
+        if !self.hub.capabilities().contains(HubCapabilities::TELEMETRY) {
+            return Err(HubSessionError::Provider(HubError::NotReady));
+        }
+        let operation = match self
+            .mqtt
+            .publish(telemetry.topic(), telemetry.payload(), QoS::AtLeastOnce)
+            .await
+        {
             Ok(Some(operation)) => operation,
             Ok(None) => return Err(HubSessionError::UnexpectedAcknowledgement),
             Err(error) => return Err(self.observe_mqtt(error)),
@@ -995,6 +1070,7 @@ mod tests {
     use crate::{
         CloudToDeviceQueue, DIRECT_METHOD_OVERLOAD_STATUS, DIRECT_METHOD_TIMEOUT_STATUS, DeviceId,
         DirectMethodDispatch, DirectMethodQueue, DirectMethodQueueError, HubHostname,
+        TelemetryDispatch, TelemetryQueue,
     };
 
     fn block_on<F: Future>(future: F) -> F::Output {
@@ -1020,6 +1096,7 @@ mod tests {
         disconnected: bool,
         twin_response_after_publish: bool,
         capabilities: SessionCapabilities,
+        pending: Option<SessionPendingOperation>,
     }
 
     impl MockSession {
@@ -1032,6 +1109,7 @@ mod tests {
                 acknowledgements: 0,
                 disconnected: false,
                 twin_response_after_publish: false,
+                pending: None,
                 capabilities: SessionCapabilities::MANUAL_INBOUND_ACK
                     .union(SessionCapabilities::CORRELATED_PUBLISH_ACK)
                     .union(SessionCapabilities::CORRELATED_SUBSCRIPTION_ACK),
@@ -1059,6 +1137,10 @@ mod tests {
             self.capabilities
         }
 
+        fn pending_operation(&self) -> Option<SessionPendingOperation> {
+            self.pending
+        }
+
         fn classify_error(error: &Self::Error) -> MqttErrorKind {
             error.0
         }
@@ -1070,6 +1152,7 @@ mod tests {
         ) -> Result<OperationId, Self::Error> {
             let operation = self.allocate();
             self.subscriptions += 1;
+            self.pending = Some(SessionPendingOperation::Subscribe(operation));
             self.events.push_back(SessionEvent::Subscribed {
                 operation,
                 granted_qos: QoS::AtLeastOnce,
@@ -1085,6 +1168,7 @@ mod tests {
         ) -> Result<Option<OperationId>, Self::Error> {
             let operation = self.allocate();
             self.publishes += 1;
+            self.pending = Some(SessionPendingOperation::Publish(operation));
             self.events.push_back(SessionEvent::Published(operation));
             if self.twin_response_after_publish {
                 self.twin_response_after_publish = false;
@@ -1102,9 +1186,24 @@ mod tests {
         }
 
         async fn poll(&mut self) -> Result<SessionEvent<'_>, Self::Error> {
-            self.events
+            let event = self
+                .events
                 .pop_front()
-                .ok_or(MockError(MqttErrorKind::NotReady))
+                .ok_or(MockError(MqttErrorKind::NotReady))?;
+            match event {
+                SessionEvent::Published(operation)
+                    if self.pending == Some(SessionPendingOperation::Publish(operation)) =>
+                {
+                    self.pending = None;
+                }
+                SessionEvent::Subscribed { operation, .. }
+                    if self.pending == Some(SessionPendingOperation::Subscribe(operation)) =>
+                {
+                    self.pending = None;
+                }
+                _ => {}
+            }
+            Ok(event)
         }
 
         async fn acknowledge_received(&mut self) -> Result<(), Self::Error> {
@@ -1302,6 +1401,78 @@ mod tests {
         let (hub, mqtt) = session.into_parts();
         assert_eq!(hub.snapshot().state, ConnectionState::Online);
         assert_eq!(mqtt.publishes, 1);
+    }
+
+    #[test]
+    fn async_session_recovers_replayed_telemetry_acknowledgement() {
+        let operation = OperationId::new(41).unwrap();
+        let mut mqtt = MockSession::new([SessionEvent::Published(operation)]);
+        mqtt.pending = Some(SessionPendingOperation::Publish(operation));
+        let mut rejected_hub = HubClient::new(config(), HubCapabilities::TELEMETRY);
+        assert!(matches!(
+            HubSession::new(&mut rejected_hub, mqtt, SessionDisposition::Resumed),
+            Err(HubSessionError::RecoveryRequired)
+        ));
+
+        let mut mqtt = MockSession::new([SessionEvent::Published(operation)]);
+        mqtt.pending = Some(SessionPendingOperation::Publish(operation));
+        let mut hub = HubClient::new(config(), HubCapabilities::TELEMETRY);
+        let mut session =
+            HubSession::recover_telemetry(&mut hub, mqtt, SessionDisposition::Resumed).unwrap();
+        assert_eq!(
+            block_on(session.poll()).unwrap(),
+            HubSessionEvent::OutboundAcknowledged {
+                operation,
+                purpose: OutboundOperation::Telemetry,
+            }
+        );
+        assert_eq!(session.snapshot().outbound_acknowledged, 1);
+    }
+
+    #[test]
+    fn queued_telemetry_slot_survives_provider_reattachment_until_puback() {
+        let mut hub = HubClient::new(config(), HubCapabilities::TELEMETRY);
+        let mqtt = MockSession::new([]);
+        let mut session = HubSession::new(&mut hub, mqtt, SessionDisposition::Resumed).unwrap();
+        let mut queue = TelemetryQueue::<1, 64>::new().unwrap();
+        let mut topic_scratch = [0; 256];
+        let topic = session
+            .hub
+            .config()
+            .telemetry_topic(&mut topic_scratch)
+            .unwrap();
+        let token = queue
+            .enqueue(&topic, br#"{"temperature":21}"#, None)
+            .unwrap();
+        let Some(TelemetryDispatch::Ready(telemetry)) = queue.begin_next(0) else {
+            panic!("expected queued telemetry");
+        };
+        let operation = block_on(session.publish_queued_telemetry(telemetry)).unwrap();
+
+        let (hub, mqtt) = session.into_parts();
+        let mut recovered =
+            HubSession::recover_telemetry(hub, mqtt, SessionDisposition::Resumed).unwrap();
+        assert_eq!(
+            block_on(recovered.poll()).unwrap(),
+            HubSessionEvent::OutboundAcknowledged {
+                operation,
+                purpose: OutboundOperation::Telemetry,
+            }
+        );
+        assert_eq!(queue.complete_active().unwrap(), token);
+        assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn async_session_rejects_mismatched_recovery_state() {
+        let operation = OperationId::new(7).unwrap();
+        let mut mqtt = MockSession::new([]);
+        mqtt.pending = Some(SessionPendingOperation::Subscribe(operation));
+        let mut hub = HubClient::new(config(), HubCapabilities::TELEMETRY);
+        assert!(matches!(
+            HubSession::recover_telemetry(&mut hub, mqtt, SessionDisposition::Resumed),
+            Err(HubSessionError::RecoveryMismatch)
+        ));
     }
 
     #[test]

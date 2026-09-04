@@ -15,6 +15,7 @@ mod methods;
 mod properties;
 mod requests;
 mod sas;
+mod telemetry_queue;
 mod twin;
 
 pub use c2d::{CloudToDeviceMessage, parse_cloud_to_device};
@@ -42,6 +43,10 @@ pub use properties::{CodecError, EncodedProperty, MessageProperty, PropertyBag, 
 pub use requests::{RequestId, RequestIdGenerator};
 pub use sas::{
     MAX_SAS_TOKEN_LEN, MAX_SYMMETRIC_KEY_LEN, SasError, SasToken, SymmetricKey, generate_device_sas,
+};
+pub use telemetry_queue::{
+    MAX_TELEMETRY_PAYLOAD_CAPACITY, QueuedTelemetry, TelemetryDispatch, TelemetryQueue,
+    TelemetryQueueError, TelemetryToken,
 };
 pub use twin::{
     DesiredPropertiesPatch, TwinResponse, desired_properties_filter,
