@@ -2,7 +2,24 @@
 
 ## Status
 
-- Status: Proposed
+- Status: In progress — cloud, MQTT-version, security, bounded MQTT, and
+  experimental TLS ADRs; version-aware MQTT configuration; an allocation-free
+  MQTT 3.1.1 adapter; cloud/security contracts; bounded telemetry, C2D,
+  direct-method, and twin codecs; provider subscription/routing/twin-sync
+  state; device-scoped SAS generation; and a caller-buffered TLS 1.2 stream
+  proof are implemented. In-process TLS 1.2 interoperability, SNI, encrypted
+  I/O, wrong-hostname, unknown-root, and certificate-expiry tests pass.
+  A generic authenticated MQTT 3.1.1 CONNECT and QoS 1 publish also pass
+  through that stream. The host TLS negative baseline also covers untrusted
+  time, not-yet-valid certificates, corrupt/truncated handshakes, incompatible
+  ciphers, and IP identities. An opt-in ESP32-C6 hardware-RNG adapter and
+  `getrandom` bridge compile for the bare-metal target. A portable live-MQTT
+  contract and allocation-free Azure session coordinator now drive ordered
+  subscription restoration, telemetry acknowledgments, twin resynchronization,
+  reported-property correlation, direct-method responses with owned request
+  IDs, and delayed inbound PUBACK. Final firmware registration, entropy/HIL
+  and resource validation, bounded queues and method deadlines, protected
+  credential loading, firmware, and live IoT Hub gates remain open
 - Branch: `feat/cloud-iot-hub`
 - Initial target: Seeed Studio XIAO ESP32C6
 - Cloud service: Azure IoT Hub
@@ -11,6 +28,19 @@
 - Primary outcome: add a portable, bounded, recoverable Azure IoT device path
   without coupling cloud behavior to an MCU, network stack, MQTT backend, or
   product payload schema
+
+### Implementation progress
+
+| Area | Implemented | Still open |
+| --- | --- | --- |
+| Architecture | Provider boundary, MQTT-version boundary, trusted-time/secret-lifetime, bounded MQTT 3.1.1 backend, and experimental TLS 1.2 backend ADRs | X.509 signer and production TLS promotion decisions |
+| Portable MQTT | Explicit MQTT 3.1.1/MQTT 5 configuration, separate session semantics, 128-byte client identities, a capability-reporting async `MqttSession` contract, and bounded MQTT 3.1.1 adapter with QoS 1 replay, correlated operation events, manual inbound ACK, Mosquitto interoperability, and authenticated MQTT-over-TLS composition | Hermetic CI broker gate and determine whether a safe subset can also be implemented by the MQTT 5 adapter |
+| Cloud core | Allocation-free capabilities, lifecycle/error domains, and health snapshot | Extend only from proven provider needs |
+| Azure identity | Bounded hub/device configuration, MQTT client ID, username, port, and persistent-session translation | Module identities and DPS identities |
+| Azure operations | Telemetry properties, C2D metadata, direct-method request parsing and QoS 1 response correlation with fixed-capacity owned request IDs, twin GET and reported-PATCH correlation, desired-version parsing, capability-gated inbound routing, four-filter fresh-session setup, reconnect full-twin synchronization, and an async session coordinator for subscription/PUBACK correlation and application-delayed inbound ACK | Bounded delivery queues, rejection/overload behavior, method response deadlines, skipped/stale desired-version policy, and application activation/reporting integration |
+| Authentication | Trusted-time contract, credential lease, zeroizing secret storage, secure-random contract, device-key base64 decoding, HMAC-SHA256 SAS token generation | Protected key source, production time provider, X.509 identity, rotation integration |
+| TLS transport | `no_std` rustls unbuffered stream with caller-owned record/plaintext buffers, explicit trust roots and time, DNS-name SNI/verification, TLS 1.2-only Azure RSA/AES-GCM policy, target compilation, an in-process fragmented TLS peer, MQTT 3.1.1 composition, host negative verification, and an opt-in ESP32-C6 RNG/getrandom bridge | Final-binary RNG registration and entropy validation, heap/stack measurements, HIL, X.509 client auth, and alpha-provider review |
+| Verification | Host unit/golden tests, fragmented-stream MQTT session tests, Mosquitto 2.0.22 MQTT 3.1.1 QoS 1 interoperability, TLS 1.2 success/SNI/encrypted-I/O, full Azure-config/SAS/TLS/MQTT/telemetry/PUBACK composition, async provider synchronization/acceptance tests, and host TLS trust/hostname/time/cipher/corruption/truncation rejection tests, strict linting of affected crates, bare-metal RISC-V compilation | Fuzzing, live IoT Hub, ESP32-C6 HIL, and resource measurements |
 
 ## Executive recommendation
 
@@ -56,20 +86,21 @@ The repository already has useful foundations:
 - portable key/value storage contracts;
 - service lifecycle and telemetry primitives.
 
-The following gaps prevent a direct Azure integration today:
+The following gaps prevent a direct Azure integration today. Items marked
+resolved have implementation and host coverage but remain listed to preserve
+the rationale for the work:
 
 1. Azure IoT Hub device endpoints use MQTT 3.1.1. The existing adapter emits
    MQTT 5 and therefore cannot be used for IoT Hub unchanged.
-2. The portable MQTT `Config` currently contains MQTT-5-specific session
-   expiry and maximum-packet semantics without identifying a protocol version.
-3. The current MQTT client identifier is limited to 64 bytes. Azure IoT Hub
-   device identities and symmetric-key DPS registration identities can be up
-   to 128 characters.
+2. **Resolved:** portable MQTT configuration identifies MQTT 3.1.1 and MQTT 5
+   explicitly and keeps their session options separate.
+3. **Resolved:** the portable MQTT client identifier accepts the 128-byte
+   Azure device and DPS registration identity bound.
 4. The reference MQTT transport is an explicit plaintext fixture. IoT Hub
    requires TLS and does not accept insecure MQTT on port 1883.
-5. There is no portable security crate, trusted wall-clock policy, production
-   trust store, client-certificate integration, or protected credential
-   backend.
+5. Portable trusted-time, credential-lease, secure-random, and zeroizing-secret
+   contracts now exist. A production time provider, trust store,
+   client-certificate integration, and protected credential backend do not.
 6. Portable storage exists, but the XIAO board does not yet advertise a
    reviewed persistent-storage partition suitable for credentials and a DPS
    assignment record.
@@ -121,7 +152,8 @@ only because IoT Hub can accept a message of that size.
 
 The Azure IoT Hub work should provide:
 
-- a `no_std`, allocation-free provider implementation;
+- a `no_std`, allocation-free provider implementation, while concrete TLS may
+  use an explicitly measured allocator;
 - MQTT 3.1.1 over a generic asynchronous byte stream;
 - server-authenticated TLS with hostname verification and SNI;
 - development SAS-token authentication and a production X.509 path;
@@ -207,8 +239,10 @@ Add these concepts:
 - a version-tagged `SessionConfig` or a builder that makes mixing version-only
   options impossible;
 - backend capability reporting;
-- a narrow asynchronous `MqttSession` contract once the second backend proves
-  its exact required shape.
+- a narrow asynchronous `MqttSession` contract for live publish, subscribe,
+  polling, acknowledgment, and disconnect operations. The MQTT 3.1.1 backend
+  implements it; the MQTT 5 backend must not claim manual acknowledgment until
+  its behavior can preserve the same acceptance boundary.
 
 The session contract needs, at minimum:
 
@@ -256,14 +290,27 @@ implementations must be evaluated against the following mandatory criteria:
 - acceptable maintenance status, license, unsafe-code boundary, and
   transitive dependency graph.
 
-`mqtt-async-embedded` is a candidate because it currently advertises MQTT
-3.1.1 and MQTT 5, `no_std`, no allocation, and Embassy-oriented operation. It
-is not selected by this plan. Source review and the proof gates above are the
-selection mechanism.
+`mqtt-async-embedded` 1.0.0 was rejected during source review on 2026-09-04.
+Although its documentation advertises MQTT 3.1.1 and complete QoS 0/1
+operation, its default `V3` CONNECT encoder emits the older `MQIsdp` protocol
+name and level 3, and its publish, subscribe, inbound publish, and
+acknowledgment paths contain placeholder implementations. It must not be added
+as a dependency unless a later release passes the full proof again.
 
-Extending or forking `minimq` to support MQTT 3.1.1 should be considered only
-if maintained ecosystem options fail the proof. Reimplementing MQTT framing in
-this repository remains out of scope.
+`mqttrust` 0.6 was also rejected after a compile-and-codec proof. It builds
+without `std`, but its encoder replaces caller-supplied QoS 1 packet IDs with
+zero, its decoder can panic on a short CONNACK, and its SUBACK decoder discards
+the broker return codes needed to distinguish acceptance from rejection.
+
+Other reviewed options either required a global allocator, required a newer
+toolchain, implemented MQTT 5 rather than 3.1.1, supported QoS 0 only, or had
+an incompatible license. ADR 0007 therefore approves the narrowly scoped
+`embedded-sdk-mqtt-v311` adapter. It implements only the packet subset listed
+above, over `embedded-io-async`, with caller-owned buffers, strict decoding,
+one retained QoS 1/control operation, reconnect replay, and explicit inbound
+PUBACK. The earlier blanket reimplementation constraint is superseded only
+for this bounded subset. Strict broker, fuzz, TLS, Azure, and hardware gates
+still apply before support can be promoted from experimental.
 
 ### `embedded-sdk-security`
 
@@ -300,9 +347,28 @@ must not be enabled by the production feature set.
 
 ### TLS adapter
 
-Select a TLS implementation through a separate proof. The resulting stream
-must implement the established asynchronous I/O traits consumed by the MQTT
-backend.
+ADR 0008 selects an experimental `embedded-sdk-tls-rustls` proof using rustls
+0.23.37's unbuffered API and `rustls-rustcrypto` 0.0.2-alpha. The resulting
+stream implements the asynchronous I/O traits consumed by the MQTT backend.
+It is `no_std` and keeps record/plaintext spill buffers caller-owned, but the
+TLS engine and crypto provider require `alloc`; this must be measured rather
+than described as allocation-free.
+
+The proof currently implements server-authenticated TLS 1.2, a replaceable
+root store, trusted-time snapshots, DNS-name SNI/verification, restricted
+Azure-compatible RSA/AES-GCM suites, fixed record buffers, and distinct TLS,
+transport, EOF, and capacity failures. An in-process RSA peer proves a
+fragmented TLS 1.2 handshake, SNI, encrypted bidirectional I/O, and rejection
+of wrong hostnames, unknown roots, untrusted time, not-yet-valid or expired
+certificates, IP identities, incompatible ciphers, corrupted records, and
+truncated handshakes. The ESP32-C6 port now exposes an opt-in `SecureRandom`
+implementation and the function a final binary registers as the TLS provider's
+custom `getrandom` backend. Both make the RF-active entropy precondition
+explicit and compile for the bare-metal target. Final-binary registration,
+entropy validation, hardware execution, and X.509 client authentication remain
+required. A generic authenticated MQTT 3.1.1 CONNECT and QoS 1
+PUBLISH/PUBACK exchange now passes through the TLS stream without
+Azure-specific code.
 
 The production baseline must prove:
 
@@ -421,7 +487,10 @@ pub enum HubEvent<'a> {
     CloudToDevice(CloudToDeviceMessage<'a>),
     DirectMethod(DirectMethodRequest<'a>),
     DesiredPropertiesPatch(DesiredPropertiesPatch<'a>),
-    TwinResponse(TwinResponse<'a>),
+    TwinResponse {
+        operation: TwinOperation,
+        response: TwinResponse<'a>,
+    },
 }
 ```
 
@@ -639,6 +708,15 @@ Method handler deadlines, concurrency, queue depth, and overload response must
 be compile-time-visible resource choices. A default of one in-flight method is
 appropriate for the first embedded slice.
 
+The current provider slice implements steps 1, 2, 5, 6, and MQTT PUBACK
+correlation for a single response. `MethodRequestId` copies the encoded `$rid`
+into fixed-capacity storage before the borrowed MQTT receive buffer is
+released. The application queue/handler still owns the method name, payload,
+deadline, and overload policy; those lifecycle mechanics remain a Phase 3
+gate. Azure delivers MQTT method requests at QoS 0, so their application
+acceptance boundary is observable but cannot be reinforced with a broker
+PUBACK.
+
 ## Device twin flow
 
 The full feature uses two subscriptions:
@@ -671,6 +749,12 @@ The product owns:
 A desired patch must not be marked applied merely because it was received.
 Reported properties should describe the result after application validation
 and activation.
+
+The current provider session can issue a complete twin GET, correlate its
+service response, publish a reported-property PATCH, and independently
+correlate both its MQTT PUBACK and Azure `$rid` response. Product schema,
+activation, skipped/stale version policy, and reconnect integration in the
+reference firmware remain open.
 
 ## DPS provisioning follow-up
 
@@ -893,6 +977,12 @@ round-trip behavior for canonical encodings.
 
 Against an ephemeral strict MQTT 3.1.1 broker:
 
+The opt-in `crates/mqtt-v311/tests/broker_interop.rs` test now proves CONNECT,
+SUBSCRIBE/SUBACK, QoS 1 publish/PUBACK, broker-to-client QoS 1 delivery,
+explicit client PUBACK, and DISCONNECT against Mosquitto 2.0.22. CI still
+needs a hermetic broker service before this ignored test becomes a default
+gate.
+
 - clean and persistent sessions;
 - QoS 0 and QoS 1 publish;
 - delayed PUBACK and reconnect replay;
@@ -963,6 +1053,7 @@ Deliver:
 
 - an ADR for the cloud/provider boundary;
 - an ADR revision or new ADR for MQTT 3.1.1 plus MQTT 5 coexistence;
+- an ADR for the bounded MQTT 3.1.1 backend selected after ecosystem proofs;
 - an ADR for trusted time, trust anchors, credentials, and private-key
   ownership;
 - documented support tiers and security terminology.
@@ -982,7 +1073,9 @@ Deliver:
 - measured resource report.
 
 Accept when a generic MQTT 3.1.1 QoS 1 session works over verified TLS without
-Azure code and without a global allocator requirement.
+Azure code, and when the selected TLS allocator has a measured, repeatable
+budget with explicit allocation-failure behavior. MQTT and provider layers
+must remain usable without a global allocator.
 
 ### Phase 2: Azure codec and telemetry
 
@@ -1079,14 +1172,15 @@ and cloud-processed delivery states.
 | `Cargo.lock` | Pin and audit MQTT, TLS, crypto, certificate, encoding, and JSON dependencies. |
 | `crates/mqtt/` | Add version-aware session configuration and the proven session boundary. |
 | `crates/mqtt-minimq/` | Retain MQTT 5 behavior; adapt only to common contracts without changing its wire version. |
-| `crates/mqtt-<v311-backend>/` | Add the selected MQTT 3.1.1 adapter after the proof. |
+| `crates/mqtt-v311/` | Maintain the selected bounded MQTT 3.1.1 adapter and its protocol/replay tests. |
 | `crates/security/` | Add trusted-time, secret, trust-anchor, credential-lease, and opaque-signer contracts. |
+| `crates/tls-rustls/` | Maintain the experimental TLS 1.2 async stream, explicit buffer policy, verification tests, and allocator/RNG evidence. |
 | `crates/cloud-core/` | Add minimal provider-independent state, capabilities, errors, and snapshots. |
 | `crates/cloud-azure-iot/` | Add Azure Hub identity, codec, service state machine, and provider events. |
 | `crates/cloud-azure-dps/` | Add later only when the DPS slice has owned tests and functionality. |
 | `crates/embedded-sdk/` | Export portable cloud core and feature-gated provider APIs, never concrete backend types. |
 | `firmware/seeed/xiao-esp32c6-azure-iot/` | Compose the dedicated reference application and all product policy. |
-| `ports/espressif/esp32c6/` | Add only platform capabilities such as RNG, flash, or secure-element access; no Azure logic. |
+| `ports/espressif/esp32c6/` | Owns an opt-in hardware-RNG/security bridge; add future flash or secure-element capabilities here, never Azure logic. |
 | `boards/seeed/xiao-esp32c6/` | Own reviewed partitions and physical security capabilities. |
 | `tests/host/` | Add facade, validation, golden vector, and state-machine tests. |
 | `tests/integration/` | Add local MQTT 3.1.1 and TLS fixtures. |
@@ -1140,25 +1234,21 @@ and durable outbox capabilities separately.
 
 Resolve these with focused proofs rather than assumptions:
 
-1. Which maintained MQTT 3.1.1 crate best satisfies manual ACK, persistent
-   session, cancellation, and resource requirements?
-2. Which TLS 1.2 implementation composes cleanly with `embassy-net` and the
-   selected MQTT backend on ESP32-C6?
-3. Can the TLS backend use an opaque external signer for X.509 client auth, or
+1. Does the experimental rustls/RustCrypto adapter meet measured heap, stack,
+   RNG, reconnect, maintenance, and interoperability gates on ESP32-C6?
+2. Can the TLS backend use an opaque external signer for X.509 client auth, or
    does it require raw private-key bytes?
-4. What trusted-time bootstrap and persisted lower-bound policy is acceptable
+3. What trusted-time bootstrap and persisted lower-bound policy is acceptable
    for the first supported board?
-5. Which root trust anchors ship initially, how are multiple roots selected,
+4. Which root trust anchors ship initially, how are multiple roots selected,
    and how can an emergency root migration be delivered before OTA exists?
-6. Does the MQTT backend allow delaying inbound QoS 1 PUBACK until the
-   application queue accepts the message?
-7. What packet and payload bounds fit the XIAO while supporting the selected
+5. What packet and payload bounds fit the XIAO while supporting the selected
    telemetry, method, and twin examples?
-8. Should the first production identity be software X.509, a specific secure
+6. Should the first production identity be software X.509, a specific secure
    element, or symmetric key with protected storage?
-9. Which persistent namespace and record migration format will own DPS
+7. Which persistent namespace and record migration format will own DPS
    assignment and last-known-good time?
-10. Should live Azure tests be manual, scheduled, or run through a dedicated
+8. Should live Azure tests be manual, scheduled, or run through a dedicated
     protected CI environment?
 
 ## Principal risks

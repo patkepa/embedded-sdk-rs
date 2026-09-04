@@ -4,6 +4,10 @@
 mod tests {
     use embedded_sdk::{
         bluetooth::{AdvertisingInterval, BeaconUuid, DeviceName, IBeacon, StaticRandomAddress},
+        cloud::{
+            azure_iot::{DeviceId, HubCapabilities, HubClient, HubConfig, HubHostname},
+            core::{Capabilities as CloudCapabilities, ConnectionState as CloudConnectionState},
+        },
         config::SchemaVersion,
         core::Capabilities,
         mqtt::{
@@ -87,7 +91,7 @@ mod tests {
 
     #[test]
     fn facade_exposes_bounded_mqtt_configuration() {
-        let config = MqttConfig::new(
+        let config = MqttConfig::new_v5(
             BrokerHostname::new("broker.example.test").unwrap(),
             BrokerPort::new(8883).unwrap(),
             ClientId::new("host-test-client").unwrap(),
@@ -101,5 +105,51 @@ mod tests {
         assert!(TopicName::new("devices/test/telemetry").is_ok());
         assert!(TopicFilter::new("devices/+/commands").is_ok());
         assert!(TopicName::new("devices/+/commands").is_err());
+    }
+
+    #[test]
+    fn facade_exposes_opt_in_azure_iot_configuration() {
+        let config = HubConfig::new(
+            HubHostname::new("contoso.azure-devices.net").unwrap(),
+            DeviceId::new("host-test-device").unwrap(),
+            240,
+            1024,
+        )
+        .unwrap();
+        let capabilities =
+            CloudCapabilities::TELEMETRY.union(CloudCapabilities::STATE_SYNCHRONIZATION);
+        let client = HubClient::new(
+            config,
+            HubCapabilities::TELEMETRY.union(HubCapabilities::TWINS),
+        );
+
+        assert_eq!(config.mqtt().client_id().as_str(), "host-test-device");
+        assert!(capabilities.contains(CloudCapabilities::TELEMETRY));
+        assert!(
+            client
+                .capabilities()
+                .portable()
+                .contains(CloudCapabilities::STATE_SYNCHRONIZATION)
+        );
+        assert_eq!(
+            CloudConnectionState::default(),
+            CloudConnectionState::Disabled
+        );
+    }
+
+    #[test]
+    fn facade_exposes_security_lifetime_contracts() {
+        use embedded_sdk::security::{CredentialLease, CredentialState, UnixTime};
+
+        let lease = CredentialLease::new(
+            UnixTime::from_seconds(1_000),
+            UnixTime::from_seconds(2_000),
+            100,
+        )
+        .unwrap();
+        assert_eq!(
+            lease.state_at(UnixTime::from_seconds(1_900)),
+            CredentialState::RefreshDue
+        );
     }
 }

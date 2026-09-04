@@ -25,6 +25,10 @@ pub mod wifi;
 #[cfg(all(target_arch = "riscv32", feature = "bluetooth"))]
 pub mod bluetooth;
 
+/// ESP32-C6 random-number integration for security consumers.
+#[cfg(all(target_arch = "riscv32", feature = "hardware-rng"))]
+pub mod security;
+
 /// Initializes the Embassy executor and time driver on ESP32-C6.
 ///
 /// The caller owns chip initialization and passes the two peripheral tokens

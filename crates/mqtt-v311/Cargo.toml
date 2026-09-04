@@ -1,0 +1,15 @@
+[package]
+name = "embedded-sdk-mqtt-v311"
+description = "Allocation-free MQTT 3.1.1 adapter over generic async byte streams"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+embedded-io-async.workspace = true
+embedded-sdk-mqtt.workspace = true
+
+[lints]
+workspace = true

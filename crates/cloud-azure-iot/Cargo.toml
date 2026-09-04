@@ -1,0 +1,20 @@
+[package]
+name = "embedded-sdk-cloud-azure-iot"
+description = "Allocation-free Azure IoT Hub device protocol contracts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+base64ct.workspace = true
+embedded-sdk-cloud-core.workspace = true
+embedded-sdk-mqtt.workspace = true
+embedded-sdk-security.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true
