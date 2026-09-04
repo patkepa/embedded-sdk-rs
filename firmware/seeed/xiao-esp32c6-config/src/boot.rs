@@ -31,6 +31,47 @@ pub enum BootConfiguration {
     },
 }
 
+/// Redacted durable transition completed while selecting boot configuration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BootTransition {
+    /// No recovery transition was required.
+    None,
+    /// A rejected pending generation was rolled back.
+    RollbackCompleted {
+        /// Previous confirmed generation restored by the rollback, if any.
+        restored_generation: Option<Generation>,
+        /// Candidate generation removed from pending selection.
+        rejected_generation: Generation,
+        /// Bounded reason stored when rollback became required.
+        reason: RejectionReason,
+    },
+    /// A restartable logical factory reset was completed.
+    FactoryResetCompleted,
+}
+
+/// Configuration and any redacted durable transition completed during boot.
+///
+/// This type deliberately implements neither `Debug` nor `Display` because it
+/// owns credential-bearing configuration through [`BootConfiguration`].
+pub struct BootOutcome {
+    configuration: BootConfiguration,
+    transition: BootTransition,
+}
+
+impl BootOutcome {
+    /// Returns the redacted transition completed during recovery.
+    #[must_use]
+    pub const fn transition(&self) -> BootTransition {
+        self.transition
+    }
+
+    /// Consumes the outcome and returns the selected configuration.
+    #[must_use]
+    pub fn into_configuration(self) -> BootConfiguration {
+        self.configuration
+    }
+}
+
 /// Redacted boot-selection failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -54,7 +95,7 @@ pub async fn recover_boot_configuration<S: KeyValueStore>(
     repository: &mut Repository<S>,
     scratch: &mut [u8],
     max_verification_attempts: u8,
-) -> Result<BootConfiguration, BootConfigurationError> {
+) -> Result<BootOutcome, BootConfigurationError> {
     let result =
         recover_boot_configuration_inner(repository, scratch, max_verification_attempts).await;
     scratch.zeroize();
@@ -65,14 +106,20 @@ async fn recover_boot_configuration_inner<S: KeyValueStore>(
     repository: &mut Repository<S>,
     scratch: &mut [u8],
     max_verification_attempts: u8,
-) -> Result<BootConfiguration, BootConfigurationError> {
+) -> Result<BootOutcome, BootConfigurationError> {
     let mut state = repository
         .recover(scratch)
         .await
         .map_err(|_| BootConfigurationError::Storage)?;
+    let mut transition = BootTransition::None;
     loop {
         match state {
-            DeviceState::Unprovisioned => return Ok(BootConfiguration::Unprovisioned),
+            DeviceState::Unprovisioned => {
+                return Ok(BootOutcome {
+                    configuration: BootConfiguration::Unprovisioned,
+                    transition,
+                });
+            }
             DeviceState::Provisioned {
                 confirmed_generation,
             } => {
@@ -85,9 +132,12 @@ async fn recover_boot_configuration_inner<S: KeyValueStore>(
                 configuration
                     .validate()
                     .map_err(|_| BootConfigurationError::ProductConfiguration)?;
-                return Ok(BootConfiguration::Confirmed {
-                    generation: confirmed_generation,
-                    configuration,
+                return Ok(BootOutcome {
+                    configuration: BootConfiguration::Confirmed {
+                        generation: confirmed_generation,
+                        configuration,
+                    },
+                    transition,
                 });
             }
             DeviceState::PendingVerification {
@@ -117,22 +167,35 @@ async fn recover_boot_configuration_inner<S: KeyValueStore>(
                         return Err(BootConfigurationError::PendingRejected);
                     }
                 };
-                return Ok(BootConfiguration::Pending {
-                    generation: pending_generation,
-                    configuration,
+                return Ok(BootOutcome {
+                    configuration: BootConfiguration::Pending {
+                        generation: pending_generation,
+                        configuration,
+                    },
+                    transition,
                 });
             }
-            DeviceState::RollbackRequired { .. } => {
+            DeviceState::RollbackRequired {
+                previous_generation,
+                rejected_generation,
+                reason,
+            } => {
                 state = repository
                     .complete_rollback()
                     .await
                     .map_err(|_| BootConfigurationError::Storage)?;
+                transition = BootTransition::RollbackCompleted {
+                    restored_generation: previous_generation,
+                    rejected_generation,
+                    reason,
+                };
             }
             DeviceState::ResetInProgress => {
                 state = repository
                     .resume_factory_reset()
                     .await
                     .map_err(|_| BootConfigurationError::Storage)?;
+                transition = BootTransition::FactoryResetCompleted;
             }
             DeviceState::RecoveryRequired { reason } => {
                 return Err(BootConfigurationError::Recovery(reason));
@@ -152,17 +215,21 @@ mod tests {
 
     use embassy_futures::block_on;
     use embedded_sdk_provisioning::{
-        DeviceState, MAX_SLOT_RECORD_BYTES, Repository, SLOT_A_KEY, SLOT_B_KEY, STATE_KEY,
+        DeviceState, MAX_SLOT_RECORD_BYTES, RejectionReason, Repository, SLOT_A_KEY, SLOT_B_KEY,
+        STATE_KEY,
     };
     use embedded_sdk_storage::{Fetch, Key, KeyValueStore};
     use std::vec::Vec;
 
-    use super::{BootConfiguration, BootConfigurationError, recover_boot_configuration};
+    use super::{
+        BootConfiguration, BootConfigurationError, BootOutcome, BootTransition,
+        recover_boot_configuration,
+    };
     use crate::CURRENT_SCHEMA;
 
     const OPEN_CONFIGURATION: &[u8] = b"XCF1\0\0\x04\0\0wifi";
 
-    fn expect_boot(result: Result<BootConfiguration, BootConfigurationError>) -> BootConfiguration {
+    fn expect_boot(result: Result<BootOutcome, BootConfigurationError>) -> BootOutcome {
         match result {
             Ok(configuration) => configuration,
             Err(error) => panic!("boot selection failed: {error:?}"),
@@ -239,7 +306,8 @@ mod tests {
             let mut repository = Repository::new(MemoryStore::default());
             let mut scratch = [0xaa; MAX_SLOT_RECORD_BYTES];
             assert!(matches!(
-                expect_boot(recover_boot_configuration(&mut repository, &mut scratch, 1).await),
+                expect_boot(recover_boot_configuration(&mut repository, &mut scratch, 1).await)
+                    .into_configuration(),
                 BootConfiguration::Unprovisioned
             ));
             assert!(scratch.iter().all(|byte| *byte == 0));
@@ -257,7 +325,9 @@ mod tests {
                 .await
                 .unwrap();
 
-            match expect_boot(recover_boot_configuration(&mut repository, &mut scratch, 1).await) {
+            match expect_boot(recover_boot_configuration(&mut repository, &mut scratch, 1).await)
+                .into_configuration()
+            {
                 BootConfiguration::Pending {
                     generation: actual,
                     configuration,
@@ -272,7 +342,8 @@ mod tests {
             }
             repository.confirm_pending().await.unwrap();
             assert!(matches!(
-                expect_boot(recover_boot_configuration(&mut repository, &mut scratch, 1).await),
+                expect_boot(recover_boot_configuration(&mut repository, &mut scratch, 1).await)
+                    .into_configuration(),
                 BootConfiguration::Confirmed {
                     generation: actual,
                     ..
@@ -293,8 +364,41 @@ mod tests {
                 .unwrap();
             repository.start_verification_attempt(1).await.unwrap();
 
+            let outcome =
+                expect_boot(recover_boot_configuration(&mut repository, &mut scratch, 1).await);
             assert!(matches!(
-                expect_boot(recover_boot_configuration(&mut repository, &mut scratch, 1).await),
+                outcome.transition(),
+                BootTransition::RollbackCompleted {
+                    restored_generation: None,
+                    reason: RejectionReason::AttemptsExhausted,
+                    ..
+                }
+            ));
+            assert!(matches!(
+                outcome.into_configuration(),
+                BootConfiguration::Unprovisioned
+            ));
+            assert_eq!(repository.device_state(), DeviceState::Unprovisioned);
+        });
+    }
+
+    #[test]
+    fn interrupted_factory_reset_reports_completion_before_selection() {
+        block_on(async {
+            let mut repository = Repository::new(MemoryStore::default());
+            let mut scratch = [0; MAX_SLOT_RECORD_BYTES];
+            repository.recover(&mut scratch).await.unwrap();
+            repository
+                .stage_candidate(CURRENT_SCHEMA, OPEN_CONFIGURATION, &mut scratch)
+                .await
+                .unwrap();
+            repository.begin_factory_reset().await.unwrap();
+
+            let outcome =
+                expect_boot(recover_boot_configuration(&mut repository, &mut scratch, 1).await);
+            assert_eq!(outcome.transition(), BootTransition::FactoryResetCompleted);
+            assert!(matches!(
+                outcome.into_configuration(),
                 BootConfiguration::Unprovisioned
             ));
             assert_eq!(repository.device_state(), DeviceState::Unprovisioned);

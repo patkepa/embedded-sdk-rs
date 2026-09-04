@@ -8,6 +8,11 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
+[dependencies]
+embedded-sdk-provisioning.workspace = true
+serialport.workspace = true
+xiao-esp32c6-config.workspace = true
+zeroize.workspace = true
+
 [lints]
 workspace = true
-

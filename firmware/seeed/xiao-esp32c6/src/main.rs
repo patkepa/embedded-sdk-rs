@@ -44,7 +44,8 @@ use embedded_sdk_platform_esp32c6::{
 };
 #[cfg(feature = "hil-provisioning")]
 use embedded_sdk_provisioning::{
-    MAX_RESPONSE_BYTES, MAX_TRANSPORT_FRAME_BYTES, decode_request, encode_response,
+    CommitDisposition, MAX_RESPONSE_BYTES, MAX_TRANSPORT_FRAME_BYTES, ResponseKind, WireResponse,
+    decode_request, encode_response,
 };
 use embedded_sdk_provisioning::{MAX_SLOT_RECORD_BYTES, RejectionReason, Repository};
 use embedded_sdk_storage::SequentialStore;
@@ -57,7 +58,8 @@ use esp_hal::rng::Rng;
 use static_cell::StaticCell;
 use trouble_host::prelude::*;
 use xiao_esp32c6_config::{
-    BootConfiguration, BootConfigurationError, XiaoConfiguration, recover_boot_configuration,
+    BootConfiguration, BootConfigurationError, BootTransition, XiaoConfiguration,
+    recover_boot_configuration,
 };
 #[cfg(feature = "hil-provisioning")]
 use xiao_esp32c6_config::{
@@ -179,12 +181,36 @@ async fn main(spawner: Spawner) {
     };
     let mut repository = Repository::new(provisioning_store);
     let mut provisioning_record = [0; MAX_SLOT_RECORD_BYTES];
-    let boot_configuration = recover_boot_configuration(
+    let boot_outcome = recover_boot_configuration(
         &mut repository,
         &mut provisioning_record,
         PROVISIONING_MAX_VERIFICATION_ATTEMPTS,
     )
     .await;
+    if let Ok(outcome) = &boot_outcome {
+        match outcome.transition() {
+            BootTransition::None => {}
+            BootTransition::RollbackCompleted {
+                restored_generation,
+                rejected_generation,
+                reason,
+            } => match restored_generation {
+                Some(generation) => esp_println::println!(
+                    "provisioning rollback completed: generation={}, rejected_generation={}, reason={reason:?}",
+                    generation.get(),
+                    rejected_generation.get()
+                ),
+                None => esp_println::println!(
+                    "provisioning rollback completed: generation=none, rejected_generation={}, reason={reason:?}",
+                    rejected_generation.get()
+                ),
+            },
+            BootTransition::FactoryResetCompleted => {
+                esp_println::println!("provisioning factory reset completed");
+            }
+        }
+    }
+    let boot_configuration = boot_outcome.map(|outcome| outcome.into_configuration());
 
     #[cfg(feature = "hil-provisioning")]
     if !matches!(&boot_configuration, Ok(BootConfiguration::Pending { .. })) {
@@ -481,7 +507,31 @@ async fn run_hil_provisioning_window<S: embedded_sdk_storage::KeyValueStore>(
             if outcome.reboot_after_response() {
                 input.zeroize();
                 candidate.zeroize();
-                esp_println::println!("provisioning durable action complete: reboot=required");
+                match outcome.response() {
+                    WireResponse::Success(response) => match response.kind {
+                        ResponseKind::Committed(disposition) => match disposition {
+                            CommitDisposition::RebootRequired { pending_generation }
+                            | CommitDisposition::ApplyScheduled { pending_generation } => {
+                                esp_println::println!(
+                                    "provisioning candidate pending: generation={}",
+                                    pending_generation.get()
+                                );
+                            }
+                            _ => esp_println::println!(
+                                "provisioning durable action complete: reboot=required"
+                            ),
+                        },
+                        ResponseKind::FactoryReset => {
+                            esp_println::println!("provisioning factory reset completed");
+                        }
+                        _ => esp_println::println!(
+                            "provisioning durable action complete: reboot=required"
+                        ),
+                    },
+                    WireResponse::Error(_) => esp_println::println!(
+                        "provisioning recovery required: reason=durable_action"
+                    ),
+                }
                 Timer::after(PROVISIONING_REBOOT_GRACE).await;
                 esp_hal::system::software_reset();
             }

@@ -18,7 +18,10 @@ mod boot;
 mod fixture;
 mod fixture_serial;
 
-pub use boot::{BootConfiguration, BootConfigurationError, recover_boot_configuration};
+pub use boot::{
+    BootConfiguration, BootConfigurationError, BootOutcome, BootTransition,
+    recover_boot_configuration,
+};
 pub use fixture::{FixtureOutcome, HilFixtureProvisioner};
 pub use fixture_serial::{
     SERIAL_FRAME_HEADER_BYTES, SERIAL_FRAME_OVERHEAD_BYTES, SerialFrame, SerialFrameDecoder,

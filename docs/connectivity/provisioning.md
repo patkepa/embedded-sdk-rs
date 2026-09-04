@@ -96,12 +96,12 @@ after processing.
 - Pending verification: one boot attempt with a 90-second overall deadline.
 - HIL serial: 15-second boot window, 500-millisecond inter-byte timeout,
   five-second transaction timeout, eight frame errors, queue depth one.
-- Default release image after boot integration: 1,029,680 of 1,310,720 bytes
-  (78.56%), leaving 281,040 bytes in the application partition. This is
-  164,368 bytes above the 865,312-byte pre-provisioning baseline recorded in
+- Default release image after boot integration: 1,030,912 of 1,310,720 bytes
+  (78.65%), leaving 279,808 bytes in the application partition. This is
+  165,600 bytes above the 865,312-byte pre-provisioning baseline recorded in
   ADR 0005.
 - Release image with `--no-default-features --features hil-provisioning`:
-  1,053,616 bytes (80.38%), 23,936 bytes above the default boot-integration
+  1,054,928 bytes (80.48%), 24,016 bytes above the default boot-integration
   build.
 
 The image measurement uses the checked-in partition table and
@@ -129,7 +129,11 @@ confirmation, rollback selection, and restartable reset. The storage-backed
 firmware and its no-development-fallback variant cross-compile and fit the
 checked-in application partition.
 
-Repeated real-flash writes, compaction, reboot, radio-latency measurement, and
-cut-power testing are still required. Until that evidence exists, the board
-does not advertise `Capabilities::PERSISTENT_STORAGE` and this implementation
-must not be treated as production-qualified provisioning.
+Initial hardware evidence covers blank recovery, framed commit, reboot,
+attempt-exhaustion rollback, logical factory reset, and post-window radio task
+coexistence; see the
+[XIAO provisioning HIL scenario](../../tests/hil/xiao-esp32c6-provisioning.md).
+Valid-network confirmation, repeated writes and compaction, radio-latency
+measurement, and cut-power testing are still required. Until that evidence
+exists, the board does not advertise `Capabilities::PERSISTENT_STORAGE` and
+this implementation must not be treated as production-qualified provisioning.
