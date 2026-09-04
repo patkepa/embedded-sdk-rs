@@ -143,6 +143,81 @@ pub trait TrustedTime {
     fn now(&self) -> Result<UnixTime, TimeError>;
 }
 
+/// Monotonic elapsed-time source used to advance a trusted wall-clock anchor.
+///
+/// Implementations must not move backwards during one boot. This trait does
+/// not establish wall-clock trust by itself.
+pub trait MonotonicClock {
+    /// Returns milliseconds since an implementation-defined boot-local epoch.
+    fn now_millis(&self) -> u64;
+}
+
+/// Trusted wall clock advanced from a trusted snapshot and monotonic uptime.
+///
+/// The caller is responsible for authenticating or integrity-checking every
+/// Unix-time anchor before construction or refresh. An unauthenticated network
+/// time response must not be promoted to trusted merely by passing it here.
+pub struct AnchoredTrustedTime<C> {
+    clock: C,
+    unix_anchor: UnixTime,
+    monotonic_anchor_ms: u64,
+}
+
+impl<C: MonotonicClock> AnchoredTrustedTime<C> {
+    /// Anchors trusted Unix time to the clock's current monotonic instant.
+    #[must_use]
+    pub fn new(clock: C, trusted_now: UnixTime) -> Self {
+        let monotonic_anchor_ms = clock.now_millis();
+        Self {
+            clock,
+            unix_anchor: trusted_now,
+            monotonic_anchor_ms,
+        }
+    }
+
+    /// Replaces the anchor after the caller obtains a newer trusted snapshot.
+    ///
+    /// A snapshot older than the currently derived time is rejected without
+    /// changing the active anchor.
+    pub fn advance(&mut self, trusted_now: UnixTime) -> Result<(), TimeError> {
+        let monotonic_now_ms = self.clock.now_millis();
+        let current = self.time_at(monotonic_now_ms)?;
+        if trusted_now < current {
+            return Err(TimeError::InvalidLowerBound);
+        }
+        self.unix_anchor = trusted_now;
+        self.monotonic_anchor_ms = monotonic_now_ms;
+        Ok(())
+    }
+
+    /// Returns the wrapped boot-local monotonic source.
+    #[must_use]
+    pub const fn clock(&self) -> &C {
+        &self.clock
+    }
+
+    /// Releases the wrapped boot-local monotonic source.
+    #[must_use]
+    pub fn into_clock(self) -> C {
+        self.clock
+    }
+
+    fn time_at(&self, monotonic_now_ms: u64) -> Result<UnixTime, TimeError> {
+        let elapsed_ms = monotonic_now_ms
+            .checked_sub(self.monotonic_anchor_ms)
+            .ok_or(TimeError::InvalidLowerBound)?;
+        self.unix_anchor
+            .checked_add(elapsed_ms / 1_000)
+            .ok_or(TimeError::Unavailable)
+    }
+}
+
+impl<C: MonotonicClock> TrustedTime for AnchoredTrustedTime<C> {
+    fn now(&self) -> Result<UnixTime, TimeError> {
+        self.time_at(self.clock.now_millis())
+    }
+}
+
 /// Source of cryptographically secure random bytes.
 pub trait SecureRandom {
     /// Provider-specific failure type.
@@ -240,7 +315,7 @@ impl CredentialLease {
 
 #[cfg(test)]
 mod tests {
-    use core::fmt::Write;
+    use core::{cell::Cell, fmt::Write};
 
     use super::*;
 
@@ -270,6 +345,40 @@ mod tests {
             self.len = end;
             Ok(())
         }
+    }
+
+    struct TestMonotonicClock(Cell<u64>);
+
+    impl MonotonicClock for TestMonotonicClock {
+        fn now_millis(&self) -> u64 {
+            self.0.get()
+        }
+    }
+
+    #[test]
+    fn anchored_time_advances_only_from_monotonic_elapsed_time() {
+        let clock = TestMonotonicClock(Cell::new(25_000));
+        let time = AnchoredTrustedTime::new(clock, UnixTime::from_seconds(1_700_000_000));
+        time.clock().0.set(27_999);
+        assert_eq!(time.now().unwrap().as_seconds(), 1_700_000_002);
+    }
+
+    #[test]
+    fn anchored_time_rejects_backward_clock_and_stale_refresh() {
+        let clock = TestMonotonicClock(Cell::new(5_000));
+        let mut time = AnchoredTrustedTime::new(clock, UnixTime::from_seconds(100));
+        time.clock().0.set(9_000);
+        assert_eq!(
+            time.advance(UnixTime::from_seconds(103)),
+            Err(TimeError::InvalidLowerBound)
+        );
+        assert_eq!(time.now().unwrap(), UnixTime::from_seconds(104));
+
+        time.advance(UnixTime::from_seconds(110)).unwrap();
+        time.clock().0.set(10_500);
+        assert_eq!(time.now().unwrap(), UnixTime::from_seconds(111));
+        time.clock().0.set(8_999);
+        assert_eq!(time.now(), Err(TimeError::InvalidLowerBound));
     }
 
     #[test]

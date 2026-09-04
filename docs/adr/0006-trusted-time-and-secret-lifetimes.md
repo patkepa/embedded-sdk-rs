@@ -28,7 +28,10 @@ snapshots.
    reason such as untrusted, unavailable, or invalid persisted lower bound.
 3. A platform time policy may combine a protected last-known-good lower bound
    with a network refresh, but time must never move backwards silently. The
-   concrete policy and storage integrity remain firmware/platform concerns.
+   portable crate provides an anchored clock that advances a caller-validated
+   Unix-time snapshot using monotonic uptime and rejects backwards movement.
+   Snapshot acquisition, the concrete policy, and storage integrity remain
+   firmware/platform concerns.
 4. Time-bounded credentials carry a non-secret `CredentialLease` with separate
    issuance, refresh, and hard-expiry instants. Refresh begins before expiry;
    an expired credential cannot start a new connection.
