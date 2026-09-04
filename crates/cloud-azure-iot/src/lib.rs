@@ -9,6 +9,7 @@ mod c2d;
 mod c2d_queue;
 mod client;
 mod config;
+mod credentials;
 mod encode;
 mod method_queue;
 mod methods;
@@ -31,6 +32,10 @@ pub use config::{
     ConfigError, DeviceId, HubConfig, HubHostname, IOT_HUB_API_VERSION, MAX_DEVICE_ID_LEN,
     MAX_KEEP_ALIVE_SECONDS, MQTT_TLS_PORT,
 };
+pub use credentials::{
+    DeviceSasProvider, MAX_BASE64_SYMMETRIC_KEY_LEN, SasCredentialError, SasCredentialProvider,
+    SasKeySource, SasProviderConfigError,
+};
 pub use method_queue::{
     DIRECT_METHOD_OVERLOAD_STATUS, DIRECT_METHOD_TIMEOUT_STATUS, DirectMethodDispatch,
     DirectMethodQueue, DirectMethodQueueError, MAX_METHOD_FIELD_CAPACITY, QueuedDirectMethod,
@@ -42,7 +47,8 @@ pub use methods::{
 pub use properties::{CodecError, EncodedProperty, MessageProperty, PropertyBag, PropertyIter};
 pub use requests::{RequestId, RequestIdGenerator};
 pub use sas::{
-    MAX_SAS_TOKEN_LEN, MAX_SYMMETRIC_KEY_LEN, SasError, SasToken, SymmetricKey, generate_device_sas,
+    MAX_SAS_TOKEN_LEN, MAX_SYMMETRIC_KEY_LEN, SasError, SasPassword, SasToken, SymmetricKey,
+    generate_device_sas,
 };
 pub use telemetry_queue::{
     MAX_TELEMETRY_PAYLOAD_CAPACITY, QueuedTelemetry, TelemetryDispatch, TelemetryQueue,

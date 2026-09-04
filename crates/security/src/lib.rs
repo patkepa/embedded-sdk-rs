@@ -43,6 +43,27 @@ pub struct SecretBytes<const N: usize> {
     len: u16,
 }
 
+/// Explicit scoped borrow of secret bytes.
+///
+/// This wrapper makes secret exposure visible at an async call site while
+/// keeping formatting redacted and preventing the borrow from outliving its
+/// owning [`SecretBytes`].
+pub struct ExposedSecret<'a>(&'a [u8]);
+
+impl ExposedSecret<'_> {
+    /// Returns the borrowed bytes for immediate use by a security consumer.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8] {
+        self.0
+    }
+}
+
+impl fmt::Debug for ExposedSecret<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ExposedSecret(**REDACTED**)")
+    }
+}
+
 impl<const N: usize> SecretBytes<N> {
     /// Copies a non-empty secret into fixed-capacity storage.
     pub fn new(value: &[u8]) -> Result<Self, SecretError> {
@@ -82,6 +103,12 @@ impl<const N: usize> SecretBytes<N> {
     /// Temporarily exposes only the initialized bytes to a caller operation.
     pub fn with_secret<R>(&self, operation: impl FnOnce(&[u8]) -> R) -> R {
         operation(&self.bytes[..usize::from(self.len)])
+    }
+
+    /// Borrows a redacted view suitable for an asynchronous security call.
+    #[must_use]
+    pub fn expose_secret(&self) -> ExposedSecret<'_> {
+        ExposedSecret(&self.bytes[..usize::from(self.len)])
     }
 }
 
@@ -386,6 +413,10 @@ mod tests {
         let secret = SecretBytes::<16>::new(b"device-key").unwrap();
         assert_eq!(secret.len(), 10);
         assert_eq!(secret.with_secret(|value| value.len()), 10);
+        assert_eq!(secret.expose_secret().as_bytes().len(), 10);
+        let mut exposed_debug = StackText::<64>::new();
+        write!(&mut exposed_debug, "{:?}", secret.expose_secret()).unwrap();
+        assert_eq!(exposed_debug.as_str(), "ExposedSecret(**REDACTED**)");
 
         let mut debug = StackText::<64>::new();
         write!(&mut debug, "{secret:?}").unwrap();

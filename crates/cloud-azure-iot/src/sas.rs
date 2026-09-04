@@ -2,8 +2,8 @@ use core::fmt;
 
 use base64ct::{Base64, Encoding};
 use embedded_sdk_security::{
-    CredentialLease, CredentialLeaseError, CredentialState, SecretBytes, TimeError, TrustedTime,
-    UnixTime,
+    CredentialLease, CredentialLeaseError, CredentialState, ExposedSecret, SecretBytes, TimeError,
+    TrustedTime, UnixTime,
 };
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
@@ -82,6 +82,25 @@ pub struct SasToken {
     lease: CredentialLease,
 }
 
+/// Explicit borrowed view of a SAS token's MQTT password bytes.
+///
+/// The view cannot outlive its [`SasToken`] and always redacts debug output.
+pub struct SasPassword<'a>(ExposedSecret<'a>);
+
+impl SasPassword<'_> {
+    /// Exposes the bytes only for immediate encrypted MQTT connection setup.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+}
+
+impl fmt::Debug for SasPassword<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SasPassword(**REDACTED**)")
+    }
+}
+
 impl SasToken {
     /// Returns the non-secret lifetime metadata.
     #[must_use]
@@ -98,6 +117,12 @@ impl SasToken {
     /// Temporarily exposes the MQTT password bytes to connection setup.
     pub fn with_password<R>(&self, operation: impl FnOnce(&[u8]) -> R) -> R {
         self.password.with_secret(operation)
+    }
+
+    /// Borrows a redacted password view that can span an async MQTT CONNECT.
+    #[must_use]
+    pub fn expose_password(&self) -> SasPassword<'_> {
+        SasPassword(self.password.expose_secret())
     }
 }
 
@@ -285,6 +310,10 @@ mod tests {
         assert_eq!(
             std::format!("{token:?}"),
             "SasToken { password: \"**REDACTED**\", lease: CredentialLease { issued_at: UnixTime(1700000000), refresh_at: UnixTime(1700003300), expires_at: UnixTime(1700003600) } }"
+        );
+        assert_eq!(
+            std::format!("{:?}", token.expose_password()),
+            "SasPassword(**REDACTED**)"
         );
         assert_eq!(std::format!("{key:?}"), "SymmetricKey(**REDACTED**)");
     }

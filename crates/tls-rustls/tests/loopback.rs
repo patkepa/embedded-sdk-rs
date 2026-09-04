@@ -489,10 +489,10 @@ fn carries_azure_sas_telemetry_through_mqtt_and_tls() {
         },
     )
     .unwrap();
-    let connection = sas.with_password(|password| {
-        let credentials = Credentials::new(username, password).unwrap();
-        block_on(mqtt.connect(tls, TransportSecurity::Encrypted, Some(credentials))).unwrap()
-    });
+    let password = sas.expose_password();
+    let credentials = Credentials::new(username, password.as_bytes()).unwrap();
+    let connection =
+        block_on(mqtt.connect(tls, TransportSecurity::Encrypted, Some(credentials))).unwrap();
 
     let mut hub = HubClient::new(hub_config, HubCapabilities::TELEMETRY);
     let mut session = HubSession::new(&mut hub, connection, SessionDisposition::Fresh).unwrap();

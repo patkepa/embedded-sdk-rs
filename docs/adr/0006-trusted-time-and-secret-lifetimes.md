@@ -38,9 +38,10 @@ snapshots.
 5. Owned secret material uses fixed-capacity `SecretBytes`. Construction is
    fallible, debug output is always redacted, ordinary slice/display traits are
    intentionally absent, and the entire backing storage is zeroized on drop.
-6. Secret access occurs only through an explicit scoped operation. Provider
-   configuration, lifecycle state, errors, and snapshots contain no secret
-   material.
+6. Secret access occurs only through an explicit scoped operation or a
+   redacted `ExposedSecret` borrow when bytes must remain available across an
+   asynchronous security operation. Provider configuration, lifecycle state,
+   errors, and snapshots contain no secret material.
 7. Cryptographically secure randomness is requested through `SecureRandom`.
    Concrete hardware RNG composition and health requirements remain owned by
    the platform/firmware.
@@ -48,6 +49,11 @@ snapshots.
    added only with their first concrete consumer and backend proof. This avoids
    freezing a generic crypto API before the TLS and signer libraries are
    selected.
+9. The Azure provider defines the first focused async credential boundary: a
+   caller-supplied key source fills temporary zeroizing storage, device-scoped
+   SAS generation consumes trusted time, and only the short-lived redacted
+   token survives for MQTT connection setup. A concrete protected key source
+   remains a firmware/platform responsibility.
 
 ## Consequences
 
