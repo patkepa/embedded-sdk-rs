@@ -23,6 +23,17 @@ fn main() -> ExitCode {
             ESP32C6_TARGET,
             "--release",
         ]),
+        "build-xiao-esp32c6-hil" => cargo([
+            "build",
+            "-p",
+            XIAO_ESP32C6_FIRMWARE,
+            "--target",
+            ESP32C6_TARGET,
+            "--release",
+            "--no-default-features",
+            "--features",
+            "hil-provisioning",
+        ]),
         "build-xiao-esp32c6-beacon" => cargo([
             "build",
             "-p",
@@ -190,6 +201,7 @@ fn print_help() {
     println!("  cargo xtask test           run host tests");
     println!("  cargo xtask doctor         verify ESP32-C6 development tools");
     println!("  cargo xtask build-xiao-esp32c6  build release firmware");
+    println!("  cargo xtask build-xiao-esp32c6-hil  build fixture provisioning firmware");
     println!("  cargo xtask run-xiao-esp32c6    build, flash, and monitor firmware");
     println!("  cargo xtask build-xiao-esp32c6-beacon  build iBeacon firmware");
     println!("  cargo xtask run-xiao-esp32c6-beacon    build, flash, and monitor iBeacon");

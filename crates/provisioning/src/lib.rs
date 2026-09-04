@@ -20,8 +20,8 @@ pub use protocol::{
     SessionId, TransactionId, TransactionState,
 };
 pub use repository::{
-    PROVISIONING_NAMESPACE, Repository, RepositoryError, SLOT_A_KEY, SLOT_B_KEY, STATE_KEY,
-    StoredCandidate,
+    MAX_SLOT_RECORD_BYTES, PROVISIONING_NAMESPACE, Repository, RepositoryError, SLOT_A_KEY,
+    SLOT_B_KEY, STATE_KEY, StoredCandidate,
 };
 pub use service::{Action, ProvisioningCandidate, Service, ServiceConfig, ServiceError};
 pub use status::{DeviceState, ErrorKind, RecoveryReason, RejectionReason, Status};

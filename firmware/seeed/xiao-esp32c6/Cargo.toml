@@ -8,6 +8,11 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
+[features]
+default = ["development-config-fallback"]
+development-config-fallback = []
+hil-provisioning = ["dep:zeroize"]
+
 [[bin]]
 name = "xiao-esp32c6-firmware"
 path = "src/main.rs"
@@ -26,7 +31,9 @@ embedded-sdk-bluetooth.workspace = true
 embedded-sdk-mqtt.workspace = true
 embedded-sdk-mqtt-minimq.workspace = true
 embedded-sdk-networking-embassy-net.workspace = true
-embedded-sdk-platform-esp32c6 = { workspace = true, features = ["bluetooth", "coex", "wifi"] }
+embedded-sdk-platform-esp32c6 = { workspace = true, features = ["bluetooth", "coex", "storage", "wifi"] }
+embedded-sdk-provisioning.workspace = true
+embedded-sdk-storage.workspace = true
 embedded-sdk-wifi.workspace = true
 esp-alloc = { workspace = true, features = ["compat", "esp32c6", "global-allocator"] }
 esp-backtrace = { workspace = true, features = ["esp32c6", "panic-handler", "println"] }
@@ -54,6 +61,7 @@ trouble-host = { workspace = true, features = [
     "peripheral",
 ] }
 xiao-esp32c6-config.workspace = true
+zeroize = { workspace = true, optional = true }
 
 [lints]
 workspace = true

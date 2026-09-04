@@ -1,8 +1,9 @@
 # ADR 0008: XIAO Reference Product Configuration
 
-- Status: Accepted for host validation
+- Status: Accepted for compile validation
 - Date: 2026-09-04
-- Firmware and HIL validation: Pending
+- Firmware integration: Complete
+- HIL validation: Pending
 
 ## Context
 
@@ -59,9 +60,10 @@ explicitly and on drop.
   until explicitly implemented and tested.
 - MQTT remains a development fixture feature and does not become a production
   identity or transport-security claim.
-- Golden-vector, maximum-boundary, truncation, redaction, and zeroization tests
-  run on the host. Firmware application and power-interruption evidence remain
-  required.
+- Golden-vector, maximum-boundary, truncation, redaction, zeroization, and boot
+  recovery tests run on the host. The reference firmware applies recovered
+  configuration and cross-compiles with and without the development fallback.
+  Hardware-in-the-loop and power-interruption evidence remain required.
 
 ## Alternatives considered
 

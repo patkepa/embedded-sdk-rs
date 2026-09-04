@@ -2277,9 +2277,11 @@ dependencies = [
 name = "xiao-esp32c6-config"
 version = "0.1.0"
 dependencies = [
+ "embassy-futures",
  "embedded-sdk-config",
  "embedded-sdk-mqtt",
  "embedded-sdk-provisioning",
+ "embedded-sdk-storage",
  "embedded-sdk-wifi",
  "zeroize",
 ]
@@ -2300,6 +2302,8 @@ dependencies = [
  "embedded-sdk-mqtt-minimq",
  "embedded-sdk-networking-embassy-net",
  "embedded-sdk-platform-esp32c6",
+ "embedded-sdk-provisioning",
+ "embedded-sdk-storage",
  "embedded-sdk-wifi",
  "esp-alloc",
  "esp-backtrace",
@@ -2310,6 +2314,7 @@ dependencies = [
  "static_cell",
  "trouble-host",
  "xiao-esp32c6-config",
+ "zeroize",
 ]
 
 [[package]]

@@ -38,6 +38,12 @@ bytes for flags, ports, lengths, schema evolution, and product metadata.
    transaction-state discriminants plus fixed-width IDs, generations, schema,
    attempt count, and bounded reason. Unused fields must be zero so alternate
    ambiguous representations are rejected.
+7. The fixture serial frame uses a NUL-prefixed four-byte magic, one-byte
+   framing version, one-byte direction, two-byte big-endian payload length,
+   and a four-byte big-endian IEEE CRC-32 over the header and payload. Its
+   12-byte overhead leaves four bytes of the transport budget reserved. The
+   incremental decoder ignores printable diagnostics before magic and clears
+   partial or rejected frames before resynchronizing.
 
 Initial fixed budgets are:
 
@@ -60,9 +66,9 @@ BLE chunk metadata is outside the reassembled service request.
   accepted.
 - The duplicated payload length catches framing or envelope disagreement even
   though CBOR byte strings already carry a length.
-- Request and response encoding and decoding have checked-in golden,
-  round-trip, and malformed-input tests. Transport framing remains subsequent
-  work.
+- Request, response, and serial-frame encoding and decoding have checked-in
+  round-trip, boundary, resynchronization, integrity, and malformed-input
+  tests. BLE chunk framing remains subsequent work.
 - Compile-size and stack deltas must be recorded when the codec is linked into
   the XIAO serial fixture build; a host-only dependency does not provide that
   evidence.

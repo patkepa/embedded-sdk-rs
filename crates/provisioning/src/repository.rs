@@ -23,6 +23,9 @@ const SLOT_HEADER_BYTES: usize = 20;
 const SLOT_CRC_BYTES: usize = 4;
 const SLOT_OVERHEAD_BYTES: usize = SLOT_HEADER_BYTES + SLOT_CRC_BYTES;
 
+/// Largest complete slot record, including format metadata and CRC.
+pub const MAX_SLOT_RECORD_BYTES: usize = SLOT_OVERHEAD_BYTES + MAX_CANDIDATE_BYTES;
+
 const STATE_READY: u8 = 0;
 const STATE_ROLLBACK: u8 = 1;
 const STATE_RESET: u8 = 2;
@@ -521,11 +524,11 @@ impl<S: KeyValueStore> Repository<S> {
     /// Atomically marks logical factory reset as in progress.
     pub async fn begin_factory_reset(&mut self) -> Result<(), RepositoryError<S::Error>> {
         match self.state {
-            DurableState::Unloaded | DurableState::Recovery(_) => {
-                return Err(RepositoryError::InvalidTransition);
-            }
+            DurableState::Unloaded => return Err(RepositoryError::InvalidTransition),
             DurableState::Reset => return Ok(()),
-            DurableState::Ready { .. } | DurableState::Rollback { .. } => {}
+            DurableState::Ready { .. }
+            | DurableState::Rollback { .. }
+            | DurableState::Recovery(_) => {}
         }
         self.write_state(DurableState::Reset).await
     }
@@ -1013,6 +1016,35 @@ mod tests {
                 }
             );
             assert!(repository.store.slot_a.is_some());
+        });
+    }
+
+    #[test]
+    fn explicit_factory_reset_can_clear_recovery_state() {
+        block_on(async {
+            let mut repository = Repository::new(MemoryStore::default());
+            let mut scratch = scratch();
+            repository.recover(&mut scratch).await.unwrap();
+            repository
+                .stage_candidate(SchemaVersion::new(1, 0), b"candidate", &mut scratch)
+                .await
+                .unwrap();
+            let mut store = repository.into_store();
+            store.slot_a.as_mut().unwrap()[20] ^= 0x55;
+
+            let mut repository = Repository::new(store);
+            assert!(matches!(
+                repository.recover(&mut scratch).await.unwrap(),
+                DeviceState::RecoveryRequired { .. }
+            ));
+            repository.begin_factory_reset().await.unwrap();
+            assert_eq!(
+                repository.resume_factory_reset().await.unwrap(),
+                DeviceState::Unprovisioned
+            );
+            assert!(repository.store.state.is_none());
+            assert!(repository.store.slot_a.is_none());
+            assert!(repository.store.slot_b.is_none());
         });
     }
 

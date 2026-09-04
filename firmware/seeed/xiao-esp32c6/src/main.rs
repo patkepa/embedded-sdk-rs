@@ -18,14 +18,19 @@ use embassy_net::{
     tcp::TcpSocket,
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
+#[cfg(feature = "hil-provisioning")]
+use embassy_time::Instant;
 use embassy_time::{Duration, Timer, with_timeout};
 use embedded_io_async::{ErrorType, Read, Write};
 use embedded_sdk_bluetooth::{DeviceName, PeripheralConfig as SdkBluetoothConfig};
-use embedded_sdk_board_xiao_esp32c6::{BLUETOOTH_DEVICE_NAME, HARDWARE};
+use embedded_sdk_board_xiao_esp32c6::{
+    BLUETOOTH_DEVICE_NAME, HARDWARE, PROVISIONING_STORAGE_BYTES, PROVISIONING_STORAGE_OFFSET,
+};
+#[cfg(feature = "development-config-fallback")]
+use embedded_sdk_mqtt::{BrokerHostname, BrokerPort};
 use embedded_sdk_mqtt::{
-    BrokerHostname, BrokerPort, ClientId, Config as MqttConfig, ConnectionState as MqttState,
-    ErrorKind as MqttErrorKind, QoS as MqttQos, ReconnectPolicy as MqttReconnectPolicy,
-    TopicFilter, TopicName,
+    ClientId, Config as MqttConfig, ConnectionState as MqttState, ErrorKind as MqttErrorKind,
+    QoS as MqttQos, ReconnectPolicy as MqttReconnectPolicy, TopicFilter, TopicName,
 };
 use embedded_sdk_mqtt_minimq::{
     Client as MqttClient, Connection as MqttConnection, TransportSecurity,
@@ -34,16 +39,33 @@ use embedded_sdk_networking_embassy_net::EmbassyNetwork;
 use embedded_sdk_platform_esp32c6::{
     bluetooth::{BluetoothConnector, Esp32c6Bluetooth, static_random_address},
     start_embassy,
+    storage::internal_flash,
     wifi::{Esp32c6StationController, Esp32c6Wifi, StationInterface},
 };
-use embedded_sdk_wifi::{
-    Authentication, ConfigError, Passphrase, ReconnectBackoff, ScanSummary, Ssid, StationConfig,
+#[cfg(feature = "hil-provisioning")]
+use embedded_sdk_provisioning::{
+    MAX_RESPONSE_BYTES, MAX_TRANSPORT_FRAME_BYTES, decode_request, encode_response,
 };
+use embedded_sdk_provisioning::{MAX_SLOT_RECORD_BYTES, RejectionReason, Repository};
+use embedded_sdk_storage::SequentialStore;
+#[cfg(feature = "development-config-fallback")]
+use embedded_sdk_wifi::{Authentication, ConfigError, Passphrase, Ssid};
+use embedded_sdk_wifi::{ReconnectBackoff, ScanSummary, StationConfig};
 use esp_backtrace as _;
 use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::rng::Rng;
 use static_cell::StaticCell;
 use trouble_host::prelude::*;
+use xiao_esp32c6_config::{
+    BootConfiguration, BootConfigurationError, XiaoConfiguration, recover_boot_configuration,
+};
+#[cfg(feature = "hil-provisioning")]
+use xiao_esp32c6_config::{
+    HilFixtureProvisioner, MAX_ENCODED_BYTES, SerialFrameDecoder, SerialFrameKind,
+    encode_serial_frame,
+};
+#[cfg(feature = "hil-provisioning")]
+use zeroize::Zeroize;
 
 const BLUETOOTH_CONNECTIONS_MAX: usize = 1;
 // One signaling channel and one ATT channel per connection.
@@ -60,6 +82,20 @@ const MQTT_TCP_RX_BUFFER_SIZE: usize = 1024;
 const MQTT_TCP_TX_BUFFER_SIZE: usize = 1024;
 const MQTT_OUTBOUND_CHANNEL_DEPTH: usize = 4;
 const MQTT_TELEMETRY_INTERVAL: Duration = Duration::from_secs(30);
+const PROVISIONING_STORE_SCRATCH_BYTES: usize = MAX_SLOT_RECORD_BYTES + 5;
+const PROVISIONING_MAX_VERIFICATION_ATTEMPTS: u8 = 1;
+const PROVISIONING_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(90);
+const PROVISIONING_REBOOT_GRACE: Duration = Duration::from_millis(250);
+#[cfg(feature = "hil-provisioning")]
+const HIL_PROVISIONING_WINDOW: Duration = Duration::from_secs(15);
+#[cfg(feature = "hil-provisioning")]
+const HIL_PROVISIONING_POLL: Duration = Duration::from_millis(50);
+#[cfg(feature = "hil-provisioning")]
+const HIL_PROVISIONING_INTER_BYTE_TIMEOUT: Duration = Duration::from_millis(500);
+#[cfg(feature = "hil-provisioning")]
+const HIL_PROVISIONING_TRANSACTION_TIMEOUT_MS: u64 = 5_000;
+#[cfg(feature = "hil-provisioning")]
+const HIL_PROVISIONING_MAX_FRAME_ERRORS: u8 = 8;
 
 static MQTT_OUTBOUND: Channel<
     CriticalSectionRawMutex,
@@ -67,6 +103,9 @@ static MQTT_OUTBOUND: Channel<
     MQTT_OUTBOUND_CHANNEL_DEPTH,
 > = Channel::new();
 static MQTT_QUEUE_DROPS: AtomicU32 = AtomicU32::new(0);
+static PROVISIONING_VERIFICATION: Channel<CriticalSectionRawMutex, VerificationResult, 1> =
+    Channel::new();
+static PERSISTENT_CONFIGURATION: StaticCell<XiaoConfiguration> = StaticCell::new();
 
 #[derive(Clone, Copy)]
 struct NetworkProbe {
@@ -79,6 +118,18 @@ struct MqttDevelopmentConfig {
     session: MqttConfig,
     telemetry_topic: TopicName,
     command_filter: TopicFilter,
+}
+
+struct RuntimeConfiguration {
+    station: StationConfig,
+    probe: Option<NetworkProbe>,
+    mqtt: Option<MqttDevelopmentConfig>,
+}
+
+#[derive(Clone, Copy)]
+enum VerificationResult {
+    Confirmed,
+    Rejected(RejectionReason),
 }
 
 #[derive(Clone, Copy)]
@@ -107,10 +158,99 @@ async fn main(spawner: Spawner) {
         HARDWARE.board,
         HARDWARE.chip
     );
+
+    #[cfg(feature = "hil-provisioning")]
+    let fixture_serial =
+        esp_hal::usb_serial_jtag::UsbSerialJtag::new(peripherals.USB_DEVICE).into_async();
+
+    let provisioning_flash = internal_flash(peripherals.FLASH);
+    let provisioning_end = PROVISIONING_STORAGE_OFFSET + PROVISIONING_STORAGE_BYTES;
+    let provisioning_store = match SequentialStore::<_, PROVISIONING_STORE_SCRATCH_BYTES>::new(
+        provisioning_flash,
+        PROVISIONING_STORAGE_OFFSET..provisioning_end,
+    ) {
+        Ok(store) => store,
+        Err(error) => {
+            esp_println::println!("provisioning recovery required: storage_config={error}");
+            loop {
+                Timer::after(Duration::from_secs(30)).await;
+            }
+        }
+    };
+    let mut repository = Repository::new(provisioning_store);
+    let mut provisioning_record = [0; MAX_SLOT_RECORD_BYTES];
+    let boot_configuration = recover_boot_configuration(
+        &mut repository,
+        &mut provisioning_record,
+        PROVISIONING_MAX_VERIFICATION_ATTEMPTS,
+    )
+    .await;
+
+    #[cfg(feature = "hil-provisioning")]
+    if !matches!(&boot_configuration, Ok(BootConfiguration::Pending { .. })) {
+        run_hil_provisioning_window(fixture_serial, &mut repository, &mut provisioning_record)
+            .await;
+    }
+
     match heartbeat(user_led) {
         Ok(task) => spawner.spawn(task),
         Err(_) => esp_println::println!("embedded-sdk heartbeat task allocation failed"),
     }
+
+    let (runtime_configuration, pending_generation) = match boot_configuration {
+        Ok(BootConfiguration::Unprovisioned) => {
+            esp_println::println!("provisioning ready: state=unprovisioned");
+            (development_runtime_configuration(), None)
+        }
+        Ok(BootConfiguration::Confirmed {
+            generation,
+            configuration,
+        }) => {
+            esp_println::println!(
+                "provisioning configuration selected: state=confirmed, generation={}",
+                generation.get()
+            );
+            let configuration = PERSISTENT_CONFIGURATION.init(configuration);
+            (persistent_runtime_configuration(configuration), None)
+        }
+        Ok(BootConfiguration::Pending {
+            generation,
+            configuration,
+        }) => {
+            esp_println::println!(
+                "provisioning verification started: generation={}",
+                generation.get()
+            );
+            let configuration = PERSISTENT_CONFIGURATION.init(configuration);
+            (
+                persistent_runtime_configuration(configuration),
+                Some(generation),
+            )
+        }
+        Err(BootConfigurationError::Storage) => {
+            esp_println::println!("provisioning recovery required: reason=storage");
+            (Err("persistent storage unavailable"), None)
+        }
+        Err(BootConfigurationError::Recovery(reason)) => {
+            esp_println::println!("provisioning recovery required: reason={reason:?}");
+            (Err("persistent configuration requires recovery"), None)
+        }
+        Err(BootConfigurationError::ProductConfiguration) => {
+            esp_println::println!("provisioning recovery required: reason=product_configuration");
+            (Err("persistent product configuration is invalid"), None)
+        }
+        Err(BootConfigurationError::PendingRejected) => {
+            esp_println::println!(
+                "provisioning configuration rejected: reason=product_configuration"
+            );
+            Timer::after(PROVISIONING_REBOOT_GRACE).await;
+            esp_hal::system::software_reset();
+        }
+        Err(_) => {
+            esp_println::println!("provisioning recovery required: reason=unknown");
+            (Err("persistent configuration requires recovery"), None)
+        }
+    };
 
     let bluetooth_name = match DeviceName::new(BLUETOOTH_DEVICE_NAME) {
         Ok(name) => name,
@@ -152,40 +292,280 @@ async fn main(spawner: Spawner) {
         Err(error) => esp_println::println!("embedded-sdk wifi scan failed: {error}"),
     }
 
-    match development_station_config() {
-        Ok(Some(station)) => {
-            if let Err(error) = wifi.configure_station(&station) {
+    match runtime_configuration {
+        Ok(Some(runtime)) => {
+            if let Err(error) = wifi.configure_station(&runtime.station) {
                 esp_println::println!("embedded-sdk wifi configuration failed: {error}");
+                if pending_generation.is_some() {
+                    let _ = repository
+                        .reject_pending(RejectionReason::ApplyFailed)
+                        .await;
+                    Timer::after(PROVISIONING_REBOOT_GRACE).await;
+                    esp_hal::system::software_reset();
+                }
             } else {
                 let (controller, station_interface) = wifi.into_station_parts();
-                let network_probe = match development_network_probe() {
-                    Ok(probe) => probe,
-                    Err(error) => {
-                        esp_println::println!(
-                            "embedded-sdk network probe configuration failed: {error}"
-                        );
-                        None
+                start_networking(
+                    &spawner,
+                    controller,
+                    station_interface,
+                    runtime.probe,
+                    runtime.mqtt,
+                    pending_generation.is_some(),
+                );
+
+                if let Some(generation) = pending_generation {
+                    let verification = match with_timeout(
+                        PROVISIONING_VERIFICATION_TIMEOUT,
+                        PROVISIONING_VERIFICATION.receive(),
+                    )
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(_) => VerificationResult::Rejected(RejectionReason::WifiUnavailable),
+                    };
+                    match verification {
+                        VerificationResult::Confirmed => {
+                            if repository.confirm_pending().await.is_ok() {
+                                esp_println::println!(
+                                    "provisioning configuration confirmed: generation={}",
+                                    generation.get()
+                                );
+                            } else {
+                                esp_println::println!(
+                                    "provisioning recovery required: reason=confirmation_storage"
+                                );
+                            }
+                        }
+                        VerificationResult::Rejected(reason) => {
+                            if repository.reject_pending(reason).await.is_ok() {
+                                esp_println::println!(
+                                    "provisioning configuration rejected: generation={}, reason={reason:?}",
+                                    generation.get()
+                                );
+                            } else {
+                                esp_println::println!(
+                                    "provisioning recovery required: reason=rejection_storage"
+                                );
+                            }
+                        }
                     }
-                };
-                let mqtt = match development_mqtt_config() {
-                    Ok(config) => config,
-                    Err(error) => {
-                        esp_println::println!("embedded-sdk MQTT configuration failed: {error}");
-                        None
-                    }
-                };
-                start_networking(&spawner, controller, station_interface, network_probe, mqtt);
+                    Timer::after(PROVISIONING_REBOOT_GRACE).await;
+                    esp_hal::system::software_reset();
+                }
             }
         }
-        Ok(None) => esp_println::println!(
-            "embedded-sdk wifi station: credentials not configured; scan-only mode"
-        ),
-        Err(error) => esp_println::println!("embedded-sdk wifi credential error: {error}"),
+        Ok(None) => {
+            esp_println::println!("embedded-sdk wifi station: unprovisioned; scan-only mode");
+        }
+        Err(error) => esp_println::println!("embedded-sdk runtime configuration failed: {error}"),
     }
 
     loop {
         Timer::after(Duration::from_secs(30)).await;
     }
+}
+
+#[cfg(feature = "hil-provisioning")]
+async fn run_hil_provisioning_window<S: embedded_sdk_storage::KeyValueStore>(
+    serial: esp_hal::usb_serial_jtag::UsbSerialJtag<'static, esp_hal::Async>,
+    repository: &mut Repository<S>,
+    repository_scratch: &mut [u8],
+) {
+    let Some(mut provisioner) = HilFixtureProvisioner::new(
+        repository.device_state(),
+        HIL_PROVISIONING_TRANSACTION_TIMEOUT_MS,
+    ) else {
+        esp_println::println!("provisioning fixture unavailable: reason=configuration");
+        return;
+    };
+    let (mut receiver, mut transmitter) = serial.split();
+    let mut decoder = SerialFrameDecoder::new();
+    let mut input = [0_u8; 64];
+    let mut response = [0_u8; MAX_RESPONSE_BYTES];
+    let mut encoded = [0_u8; MAX_TRANSPORT_FRAME_BYTES];
+    let mut candidate = [0_u8; MAX_ENCODED_BYTES];
+    let opened_at = Instant::now();
+    let mut last_byte_at = opened_at;
+    let mut frame_errors = 0_u8;
+
+    esp_println::println!("provisioning fixture ready: window_ms=15000");
+    while opened_at.elapsed() < HIL_PROVISIONING_WINDOW
+        && frame_errors < HIL_PROVISIONING_MAX_FRAME_ERRORS
+    {
+        let read = with_timeout(HIL_PROVISIONING_POLL, receiver.read(&mut input)).await;
+        let count = match read {
+            Ok(Ok(count)) => count,
+            Ok(Err(_)) => {
+                esp_println::println!("provisioning fixture closed: reason=serial_read");
+                break;
+            }
+            Err(_) => {
+                if decoder.is_receiving()
+                    && last_byte_at.elapsed() >= HIL_PROVISIONING_INTER_BYTE_TIMEOUT
+                {
+                    decoder.clear();
+                    frame_errors = frame_errors.saturating_add(1);
+                    esp_println::println!("provisioning frame rejected: reason=inter_byte_timeout");
+                }
+                continue;
+            }
+        };
+
+        for &byte in &input[..count] {
+            last_byte_at = Instant::now();
+            let frame = match decoder.push(byte) {
+                Ok(Some(frame)) => frame,
+                Ok(None) => continue,
+                Err(_) => {
+                    frame_errors = frame_errors.saturating_add(1);
+                    esp_println::println!("provisioning frame rejected: reason=framing");
+                    continue;
+                }
+            };
+            if frame.kind() != SerialFrameKind::Request {
+                decoder.clear();
+                frame_errors = frame_errors.saturating_add(1);
+                esp_println::println!("provisioning frame rejected: reason=direction");
+                continue;
+            }
+
+            let outcome = match decode_request(frame.payload()) {
+                Ok(request) => {
+                    provisioner
+                        .handle(
+                            request,
+                            Instant::now().as_millis(),
+                            repository,
+                            repository_scratch,
+                            &mut candidate,
+                        )
+                        .await
+                }
+                Err(_) => {
+                    decoder.clear();
+                    frame_errors = frame_errors.saturating_add(1);
+                    esp_println::println!("provisioning frame rejected: reason=codec");
+                    continue;
+                }
+            };
+            decoder.clear();
+
+            let response_len = match encode_response(outcome.response(), &mut response) {
+                Ok(len) => len,
+                Err(_) => {
+                    esp_println::println!("provisioning response failed: reason=codec");
+                    break;
+                }
+            };
+            let frame_len = match encode_serial_frame(
+                SerialFrameKind::Response,
+                &response[..response_len],
+                &mut encoded,
+            ) {
+                Ok(len) => len,
+                Err(_) => {
+                    esp_println::println!("provisioning response failed: reason=framing");
+                    break;
+                }
+            };
+            let written = transmitter.write_all(&encoded[..frame_len]).await;
+            let flushed = transmitter.flush().await;
+            response.zeroize();
+            encoded.zeroize();
+            if written.is_err() || flushed.is_err() {
+                esp_println::println!("provisioning fixture closed: reason=serial_write");
+                break;
+            }
+
+            if outcome.reboot_after_response() {
+                input.zeroize();
+                candidate.zeroize();
+                esp_println::println!("provisioning durable action complete: reboot=required");
+                Timer::after(PROVISIONING_REBOOT_GRACE).await;
+                esp_hal::system::software_reset();
+            }
+        }
+        input.zeroize();
+    }
+
+    decoder.clear();
+    input.zeroize();
+    response.zeroize();
+    encoded.zeroize();
+    candidate.zeroize();
+    esp_println::println!("provisioning fixture closed");
+}
+
+fn persistent_runtime_configuration(
+    configuration: &'static XiaoConfiguration,
+) -> Result<Option<RuntimeConfiguration>, &'static str> {
+    let station = configuration
+        .station_config()
+        .map_err(|_| "persistent Wi-Fi configuration is invalid")?;
+    let probe = configuration
+        .network_probe()
+        .map_err(|_| "persistent network probe is invalid")?
+        .map(|probe| NetworkProbe {
+            host: probe.host(),
+            port: probe.port(),
+        });
+    let mqtt = match configuration
+        .mqtt_fixture()
+        .map_err(|_| "persistent MQTT fixture is invalid")?
+    {
+        None => None,
+        Some(fixture) => {
+            let session = fixture
+                .session_config(30, 300, MQTT_RX_PACKET_BUFFER_SIZE as u32)
+                .map_err(|_| "persistent MQTT session is invalid")?;
+            let client_id = ClientId::new(fixture.client_id())
+                .map_err(|_| "persistent MQTT client ID is invalid")?;
+            let mut telemetry_storage = [0; embedded_sdk_mqtt::MAX_TOPIC_LEN];
+            let telemetry_topic = TopicName::new(fixture_topic_text(
+                &mut telemetry_storage,
+                &client_id,
+                "/telemetry",
+            )?)
+            .map_err(|_| "persistent MQTT telemetry topic is invalid")?;
+            let mut command_storage = [0; embedded_sdk_mqtt::MAX_TOPIC_LEN];
+            let command_filter = TopicFilter::new(fixture_topic_text(
+                &mut command_storage,
+                &client_id,
+                "/commands",
+            )?)
+            .map_err(|_| "persistent MQTT command topic is invalid")?;
+            Some(MqttDevelopmentConfig {
+                session,
+                telemetry_topic,
+                command_filter,
+            })
+        }
+    };
+    Ok(Some(RuntimeConfiguration {
+        station,
+        probe,
+        mqtt,
+    }))
+}
+
+#[cfg(feature = "development-config-fallback")]
+fn development_runtime_configuration() -> Result<Option<RuntimeConfiguration>, &'static str> {
+    let Some(station) =
+        development_station_config().map_err(|_| "development Wi-Fi configuration is invalid")?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(RuntimeConfiguration {
+        station,
+        probe: development_network_probe()?,
+        mqtt: development_mqtt_config()?,
+    }))
+}
+
+#[cfg(not(feature = "development-config-fallback"))]
+fn development_runtime_configuration() -> Result<Option<RuntimeConfiguration>, &'static str> {
+    Ok(None)
 }
 
 fn start_networking(
@@ -194,6 +574,7 @@ fn start_networking(
     station_interface: StationInterface<'static>,
     probe: Option<NetworkProbe>,
     mqtt: Option<MqttDevelopmentConfig>,
+    verification_pending: bool,
 ) {
     static RESOURCES: StaticCell<StackResources<NETWORK_SOCKET_COUNT>> = StaticCell::new();
 
@@ -222,7 +603,7 @@ fn start_networking(
             return;
         }
     }
-    match network_monitor_task(network, probe) {
+    match network_monitor_task(network, probe, verification_pending) {
         Ok(task) => spawner.spawn(task),
         Err(_) => esp_println::println!("embedded-sdk network monitor task allocation failed"),
     }
@@ -262,7 +643,11 @@ async fn network_runner_task(mut runner: NetworkRunner<'static, StationInterface
 }
 
 #[embassy_executor::task]
-async fn network_monitor_task(network: EmbassyNetwork<'static>, probe: Option<NetworkProbe>) {
+async fn network_monitor_task(
+    network: EmbassyNetwork<'static>,
+    probe: Option<NetworkProbe>,
+    mut verification_pending: bool,
+) {
     let stack = network.stack();
 
     loop {
@@ -312,12 +697,23 @@ async fn network_monitor_task(network: EmbassyNetwork<'static>, probe: Option<Ne
             .map_or(0, |configuration| configuration.dns_servers().len());
         esp_println::println!("embedded-sdk network IPv4 configured: dns_servers={dns_servers}");
 
-        if let Some(probe) = probe {
+        let verification = if let Some(probe) = probe {
             if snapshot.is_dns_ready() {
-                run_network_probe(network, probe).await;
+                if run_network_probe(network, probe).await {
+                    VerificationResult::Confirmed
+                } else {
+                    VerificationResult::Rejected(RejectionReason::VerificationFailed)
+                }
             } else {
                 esp_println::println!("embedded-sdk network probe skipped: DNS unavailable");
+                VerificationResult::Rejected(RejectionReason::NetworkUnavailable)
             }
+        } else {
+            VerificationResult::Confirmed
+        };
+        if verification_pending {
+            let _ = PROVISIONING_VERIFICATION.try_send(verification);
+            verification_pending = false;
         }
 
         match network.wait_ip_down().await {
@@ -514,7 +910,7 @@ async fn mqtt_backoff(backoff: &mut embedded_sdk_mqtt::ReconnectBackoff, rng: &R
     Timer::after(Duration::from_millis(u64::from(delay_ms))).await;
 }
 
-async fn run_network_probe(network: EmbassyNetwork<'_>, probe: NetworkProbe) {
+async fn run_network_probe(network: EmbassyNetwork<'_>, probe: NetworkProbe) -> bool {
     let mut addresses = [core::net::Ipv4Addr::UNSPECIFIED; 4];
     let address_count = match with_timeout(
         NETWORK_OPERATION_TIMEOUT,
@@ -525,11 +921,11 @@ async fn run_network_probe(network: EmbassyNetwork<'_>, probe: NetworkProbe) {
         Ok(Ok(count)) => count,
         Ok(Err(error)) => {
             esp_println::println!("embedded-sdk network DNS probe failed: {error}");
-            return;
+            return false;
         }
         Err(_) => {
             esp_println::println!("embedded-sdk network DNS probe timed out");
-            return;
+            return false;
         }
     };
 
@@ -545,11 +941,16 @@ async fn run_network_probe(network: EmbassyNetwork<'_>, probe: NetworkProbe) {
             );
             socket.close();
             let _ = with_timeout(NETWORK_OPERATION_TIMEOUT, socket.flush()).await;
+            true
         }
         Ok(Err(error)) => {
             esp_println::println!("embedded-sdk network TCP probe failed: {error:?}");
+            false
         }
-        Err(_) => esp_println::println!("embedded-sdk network TCP probe timed out"),
+        Err(_) => {
+            esp_println::println!("embedded-sdk network TCP probe timed out");
+            false
+        }
     }
 }
 
@@ -729,6 +1130,7 @@ async fn supervise_station(wifi: &mut Esp32c6StationController<'_>) -> ! {
     }
 }
 
+#[cfg(feature = "development-config-fallback")]
 fn development_station_config() -> Result<Option<StationConfig>, ConfigError> {
     match (option_env!("WIFI_SSID"), option_env!("WIFI_PASSWORD")) {
         (None, None) => Ok(None),
@@ -745,6 +1147,7 @@ fn development_station_config() -> Result<Option<StationConfig>, ConfigError> {
     }
 }
 
+#[cfg(feature = "development-config-fallback")]
 fn development_network_probe() -> Result<Option<NetworkProbe>, &'static str> {
     match (
         option_env!("NETWORK_TEST_HOST"),
@@ -765,6 +1168,7 @@ fn development_network_probe() -> Result<Option<NetworkProbe>, &'static str> {
     }
 }
 
+#[cfg(feature = "development-config-fallback")]
 fn development_mqtt_config() -> Result<Option<MqttDevelopmentConfig>, &'static str> {
     let host = option_env!("MQTT_HOST");
     let port = option_env!("MQTT_PORT");

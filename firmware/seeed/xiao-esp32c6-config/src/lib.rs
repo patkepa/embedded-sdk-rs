@@ -14,6 +14,17 @@ use embedded_sdk_wifi::{
 };
 use zeroize::Zeroize;
 
+mod boot;
+mod fixture;
+mod fixture_serial;
+
+pub use boot::{BootConfiguration, BootConfigurationError, recover_boot_configuration};
+pub use fixture::{FixtureOutcome, HilFixtureProvisioner};
+pub use fixture_serial::{
+    SERIAL_FRAME_HEADER_BYTES, SERIAL_FRAME_OVERHEAD_BYTES, SerialFrame, SerialFrameDecoder,
+    SerialFrameError, SerialFrameKind, encode_serial_frame,
+};
+
 /// Product-configuration schema written by this firmware.
 pub const CURRENT_SCHEMA: SchemaVersion = SchemaVersion::new(1, 0);
 /// Maximum deterministic encoding produced by this schema.

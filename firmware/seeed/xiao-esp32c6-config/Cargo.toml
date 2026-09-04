@@ -12,8 +12,12 @@ publish = false
 embedded-sdk-config.workspace = true
 embedded-sdk-mqtt.workspace = true
 embedded-sdk-provisioning.workspace = true
+embedded-sdk-storage.workspace = true
 embedded-sdk-wifi.workspace = true
 zeroize.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+embassy-futures.workspace = true
