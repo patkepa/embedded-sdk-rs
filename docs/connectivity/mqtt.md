@@ -40,7 +40,8 @@ Run a controlled MQTT 5 broker reachable from the XIAO network, then build or
 flash with all four explicit inputs:
 
 ```sh
-WIFI_SSID='network' WIFI_PASSWORD='passphrase' \
+WIFI_COUNTRY_CODE='PL' WIFI_FIRST_CHANNEL='1' WIFI_CHANNEL_COUNT='13' \
+WIFI_MAX_TX_POWER_DBM='20' WIFI_SSID='network' WIFI_PASSWORD='passphrase' \
 MQTT_HOST='broker.test' MQTT_PORT='1883' \
 MQTT_CLIENT_ID='xiao-c6-fixture' MQTT_PLAINTEXT_FIXTURE='1' \
   cargo xtask run-xiao-esp32c6

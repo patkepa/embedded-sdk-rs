@@ -71,7 +71,8 @@ of HIL validation.
 Configure the station using the existing development-only environment values:
 
 ```sh
-WIFI_SSID='network' WIFI_PASSWORD='passphrase' \
+WIFI_COUNTRY_CODE='PL' WIFI_FIRST_CHANNEL='1' WIFI_CHANNEL_COUNT='13' \
+WIFI_MAX_TX_POWER_DBM='20' WIFI_SSID='network' WIFI_PASSWORD='passphrase' \
   cargo xtask run-xiao-esp32c6
 ```
 
@@ -89,7 +90,8 @@ Set both probe values to resolve a controlled hostname and open one TCP
 connection after every newly acquired lease:
 
 ```sh
-WIFI_SSID='network' WIFI_PASSWORD='passphrase' \
+WIFI_COUNTRY_CODE='PL' WIFI_FIRST_CHANNEL='1' WIFI_CHANNEL_COUNT='13' \
+WIFI_MAX_TX_POWER_DBM='20' WIFI_SSID='network' WIFI_PASSWORD='passphrase' \
 NETWORK_TEST_HOST='sdk-test.internal' NETWORK_TEST_PORT='9000' \
   cargo xtask run-xiao-esp32c6
 ```

@@ -18,8 +18,12 @@ pub enum ConfigError {
     EmptySsid,
     /// The SSID exceeds [`MAX_SSID_LEN`].
     SsidTooLong,
-    /// A WPA passphrase must be 8 through 63 bytes, or a 64-digit hexadecimal PSK.
+    /// A WPA passphrase must be 8 through 63 printable ASCII bytes, or a 64-digit PSK.
     InvalidPassphrase,
+    /// A regulatory country code must be two uppercase ASCII letters or `00`.
+    InvalidCountryCode,
+    /// A regulatory domain must describe valid 2.4 GHz channels and transmit power.
+    InvalidRegulatoryDomain,
     /// Reconnection delays must be non-zero, ordered, and keep jitter below the maximum.
     InvalidReconnectPolicy,
 }
@@ -29,11 +33,120 @@ impl fmt::Display for ConfigError {
         match self {
             Self::EmptySsid => formatter.write_str("station SSID must not be empty"),
             Self::SsidTooLong => formatter.write_str("SSID exceeds 32 bytes"),
-            Self::InvalidPassphrase => formatter
-                .write_str("WPA passphrase must be 8-63 bytes, or a 64-digit hexadecimal PSK"),
+            Self::InvalidPassphrase => formatter.write_str(
+                "WPA passphrase must be 8-63 printable ASCII bytes, or a 64-digit hexadecimal PSK",
+            ),
+            Self::InvalidCountryCode => {
+                formatter.write_str("Wi-Fi country code must be two uppercase ASCII letters or 00")
+            }
+            Self::InvalidRegulatoryDomain => formatter.write_str(
+                "Wi-Fi regulatory domain requires channels within 1-14 and maximum power <= 20 dBm",
+            ),
             Self::InvalidReconnectPolicy => formatter
                 .write_str("reconnect policy requires 0 < initial <= maximum and jitter < maximum"),
         }
+    }
+}
+
+/// ISO 3166-1 alpha-2 regulatory country code used to configure a Wi-Fi radio.
+///
+/// `00` represents the conservative world domain when the platform driver
+/// supports it. Product firmware should normally use its deployment country.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct CountryCode([u8; 2]);
+
+impl CountryCode {
+    /// Creates a validated regulatory country code.
+    pub const fn new(value: [u8; 2]) -> Result<Self, ConfigError> {
+        let is_world = value[0] == b'0' && value[1] == b'0';
+        let is_country = value[0].is_ascii_uppercase() && value[1].is_ascii_uppercase();
+        if is_world || is_country {
+            Ok(Self(value))
+        } else {
+            Err(ConfigError::InvalidCountryCode)
+        }
+    }
+
+    /// Returns the two-byte country code expected by platform drivers.
+    pub const fn into_bytes(self) -> [u8; 2] {
+        self.0
+    }
+
+    /// Returns the country code as text.
+    pub const fn as_str(&self) -> &str {
+        // Construction permits only ASCII bytes.
+        match str::from_utf8(&self.0) {
+            Ok(value) => value,
+            Err(_) => "",
+        }
+    }
+}
+
+impl TryFrom<&str> for CountryCode {
+    type Error = ConfigError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let bytes = value.as_bytes();
+        if bytes.len() != 2 {
+            return Err(ConfigError::InvalidCountryCode);
+        }
+        Self::new([bytes[0], bytes[1]])
+    }
+}
+
+/// Explicit 2.4 GHz regulatory limits supplied by product firmware.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct RegulatoryDomain {
+    country_code: CountryCode,
+    first_channel: u8,
+    channel_count: u8,
+    maximum_tx_power_dbm: i8,
+}
+
+impl RegulatoryDomain {
+    /// Creates a validated deployment-specific regulatory domain.
+    pub const fn new(
+        country_code: CountryCode,
+        first_channel: u8,
+        channel_count: u8,
+        maximum_tx_power_dbm: i8,
+    ) -> Result<Self, ConfigError> {
+        let last_channel = first_channel.saturating_add(channel_count.saturating_sub(1));
+        if first_channel == 0
+            || first_channel > 14
+            || channel_count == 0
+            || last_channel > 14
+            || maximum_tx_power_dbm > 20
+        {
+            return Err(ConfigError::InvalidRegulatoryDomain);
+        }
+
+        Ok(Self {
+            country_code,
+            first_channel,
+            channel_count,
+            maximum_tx_power_dbm,
+        })
+    }
+
+    /// Deployment country code.
+    pub const fn country_code(&self) -> CountryCode {
+        self.country_code
+    }
+
+    /// First permitted 2.4 GHz channel.
+    pub const fn first_channel(&self) -> u8 {
+        self.first_channel
+    }
+
+    /// Number of consecutive permitted 2.4 GHz channels.
+    pub const fn channel_count(&self) -> u8 {
+        self.channel_count
+    }
+
+    /// Maximum permitted transmit power in dBm.
+    pub const fn maximum_tx_power_dbm(&self) -> i8 {
+        self.maximum_tx_power_dbm
     }
 }
 
@@ -118,10 +231,13 @@ pub struct Passphrase {
 }
 
 impl Passphrase {
-    /// Validates and stores an ASCII/UTF-8 WPA passphrase or 64-digit PSK.
+    /// Validates and stores a printable-ASCII WPA passphrase or 64-digit PSK.
     pub fn new(value: &str) -> Result<Self, ConfigError> {
         let bytes = value.as_bytes();
-        let valid = (8..MAX_PASSPHRASE_LEN).contains(&bytes.len())
+        let valid = ((8..MAX_PASSPHRASE_LEN).contains(&bytes.len())
+            && bytes
+                .iter()
+                .all(|byte| byte.is_ascii_graphic() || *byte == b' '))
             || (bytes.len() == MAX_PASSPHRASE_LEN && bytes.iter().all(u8::is_ascii_hexdigit));
         if !valid {
             return Err(ConfigError::InvalidPassphrase);
@@ -451,8 +567,8 @@ mod tests {
     extern crate std;
 
     use super::{
-        AccessPoint, Authentication, ConfigError, Passphrase, ReconnectBackoff, ReconnectPolicy,
-        ScanSummary, Security, Ssid, StationConfig,
+        AccessPoint, Authentication, ConfigError, CountryCode, Passphrase, ReconnectBackoff,
+        ReconnectPolicy, RegulatoryDomain, ScanSummary, Security, Ssid, StationConfig,
     };
 
     #[test]
@@ -481,6 +597,50 @@ mod tests {
         let rendered = std::format!("{passphrase:?}");
         assert_eq!(rendered, "Passphrase(**REDACTED**)");
         assert!(!rendered.contains("do-not-log-this"));
+    }
+
+    #[test]
+    fn validates_regulatory_country_codes() {
+        assert_eq!(CountryCode::try_from("PL").unwrap().as_str(), "PL");
+        assert_eq!(CountryCode::try_from("00").unwrap().into_bytes(), *b"00");
+        assert_eq!(
+            CountryCode::try_from("pl"),
+            Err(ConfigError::InvalidCountryCode)
+        );
+        assert_eq!(
+            CountryCode::try_from("USA"),
+            Err(ConfigError::InvalidCountryCode)
+        );
+    }
+
+    #[test]
+    fn validates_explicit_regulatory_limits() {
+        let poland =
+            RegulatoryDomain::new(CountryCode::try_from("PL").unwrap(), 1, 13, 20).unwrap();
+        assert_eq!(poland.first_channel(), 1);
+        assert_eq!(poland.channel_count(), 13);
+        assert_eq!(poland.maximum_tx_power_dbm(), 20);
+
+        assert_eq!(
+            RegulatoryDomain::new(CountryCode::try_from("US").unwrap(), 3, 13, 20),
+            Err(ConfigError::InvalidRegulatoryDomain)
+        );
+        assert_eq!(
+            RegulatoryDomain::new(CountryCode::try_from("PL").unwrap(), 1, 13, 21),
+            Err(ConfigError::InvalidRegulatoryDomain)
+        );
+    }
+
+    #[test]
+    fn rejects_passphrases_the_driver_would_truncate() {
+        assert_eq!(
+            Passphrase::new("abcd\0efgh"),
+            Err(ConfigError::InvalidPassphrase)
+        );
+        assert_eq!(
+            Passphrase::new("passwordé"),
+            Err(ConfigError::InvalidPassphrase)
+        );
     }
 
     #[test]

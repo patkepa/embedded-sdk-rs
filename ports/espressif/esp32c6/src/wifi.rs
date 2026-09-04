@@ -5,12 +5,14 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::fmt;
 
+use embassy_time::{Duration, with_timeout};
 use embedded_sdk_wifi::{
-    AccessPoint, Authentication, ConnectedStation, Security, Ssid, StationConfig, WifiState,
+    AccessPoint, Authentication, ConnectedStation, RegulatoryDomain, Security, Ssid, StationConfig,
+    WifiState,
 };
 use esp_radio::wifi::{
-    AuthenticationMethod, Config, ControllerConfig, Interface, Interfaces, WifiController,
-    scan::ScanConfig, sta::StationConfig as EspStationConfig,
+    AuthenticationMethod, Config, ControllerConfig, CountryInfo, Interface, Interfaces,
+    WifiController, scan::ScanConfig, sta::StationConfig as EspStationConfig,
 };
 
 /// ESP32-C6 station packet interface consumed by an IP stack.
@@ -26,6 +28,10 @@ pub enum Error {
     InvalidDiscoveredSsid,
     /// The portable authentication mode is not supported by this adapter version.
     UnsupportedAuthentication,
+    /// The radio did not finish scanning before the caller's deadline.
+    ScanTimeout,
+    /// The station did not associate before the caller's deadline.
+    AssociationTimeout,
     /// The Espressif radio driver rejected an operation.
     Driver(esp_radio::wifi::WifiError),
 }
@@ -42,6 +48,8 @@ impl fmt::Display for Error {
             Self::UnsupportedAuthentication => {
                 formatter.write_str("unsupported Wi-Fi authentication mode")
             }
+            Self::ScanTimeout => formatter.write_str("Wi-Fi scan timed out"),
+            Self::AssociationTimeout => formatter.write_str("Wi-Fi association timed out"),
             Self::Driver(error) => write!(formatter, "ESP Wi-Fi driver error: {error:?}"),
         }
     }
@@ -69,8 +77,16 @@ impl<'d> Esp32c6Wifi<'d> {
     /// Initializes the radio in station mode.
     ///
     /// A global allocator and the `esp-rtos` scheduler must already be running.
-    pub fn new(device: esp_hal::peripherals::WIFI<'d>) -> Result<Self, Error> {
-        let (controller, interfaces) = esp_radio::wifi::new(device, ControllerConfig::default())?;
+    pub fn new(
+        device: esp_hal::peripherals::WIFI<'d>,
+        regulatory_domain: RegulatoryDomain,
+    ) -> Result<Self, Error> {
+        let country_info = CountryInfo::from(regulatory_domain.country_code().into_bytes())
+            .with_start_channel(regulatory_domain.first_channel())
+            .with_channel_count(regulatory_domain.channel_count())
+            .with_max_tx_power_dbm(regulatory_domain.maximum_tx_power_dbm());
+        let controller_config = ControllerConfig::default().with_country_info(country_info);
+        let (controller, interfaces) = esp_radio::wifi::new(device, controller_config)?;
         Ok(Self {
             controller,
             interfaces,
@@ -84,17 +100,31 @@ impl<'d> Esp32c6Wifi<'d> {
     }
 
     /// Performs an active scan and returns at most `maximum_results` APs.
-    pub async fn scan(&mut self, maximum_results: usize) -> Result<Vec<AccessPoint>, Error> {
+    pub async fn scan(
+        &mut self,
+        maximum_results: usize,
+        timeout: Duration,
+    ) -> Result<Vec<AccessPoint>, Error> {
+        if maximum_results == 0 {
+            self.state = WifiState::Ready;
+            return Ok(Vec::new());
+        }
+
         self.state = WifiState::Scanning;
         let scan_config = ScanConfig::default().with_max(maximum_results);
-        let result = self.controller.scan_async(&scan_config).await;
+        let result = with_timeout(timeout, self.controller.scan_async(&scan_config)).await;
 
         match result {
-            Ok(discovered) => {
+            Ok(Ok(discovered)) => {
                 let mut access_points = Vec::with_capacity(discovered.len());
-                for access_point in discovered {
-                    let ssid = Ssid::try_from(access_point.ssid.as_str())
-                        .map_err(|_| Error::InvalidDiscoveredSsid)?;
+                for access_point in discovered.into_iter().take(maximum_results) {
+                    let ssid = match Ssid::new(access_point.ssid.as_bytes()) {
+                        Ok(ssid) => ssid,
+                        Err(_) => {
+                            self.state = WifiState::Ready;
+                            return Err(Error::InvalidDiscoveredSsid);
+                        }
+                    };
                     access_points.push(AccessPoint {
                         ssid,
                         bssid: access_point.bssid,
@@ -106,9 +136,13 @@ impl<'d> Esp32c6Wifi<'d> {
                 self.state = WifiState::Ready;
                 Ok(access_points)
             }
-            Err(error) => {
-                self.state = WifiState::Failed;
+            Ok(Err(error)) => {
+                self.state = WifiState::Ready;
                 Err(error.into())
+            }
+            Err(_) => {
+                self.state = WifiState::Ready;
+                Err(Error::ScanTimeout)
             }
         }
     }
@@ -123,9 +157,16 @@ impl<'d> Esp32c6Wifi<'d> {
             config = config.with_password(passphrase.as_str().into());
         }
 
-        self.controller.set_config(&Config::Station(config))?;
-        self.state = WifiState::Ready;
-        Ok(())
+        match self.controller.set_config(&Config::Station(config)) {
+            Ok(()) => {
+                self.state = WifiState::Ready;
+                Ok(())
+            }
+            Err(error) => {
+                self.state = WifiState::Failed;
+                Err(error.into())
+            }
+        }
     }
 
     /// Separates radio lifecycle control from the station packet interface.
@@ -161,38 +202,94 @@ impl Esp32c6StationController<'_> {
     ///
     /// Association establishes the Wi-Fi link only. An IP stack such as
     /// `embassy-net` must subsequently run DHCP or apply a static address.
-    pub async fn connect(&mut self) -> Result<ConnectedStation, Error> {
+    pub async fn connect(&mut self, timeout: Duration) -> Result<ConnectedStation, Error> {
+        if self.controller.is_connected() {
+            return self.current_connection();
+        }
+
         self.state = WifiState::Connecting;
-        match self.controller.connect_async().await {
-            Ok(connected) => {
-                self.state = WifiState::Connected;
-                Ok(ConnectedStation {
-                    ssid: Ssid::try_from(connected.ssid.as_str())
-                        .map_err(|_| Error::InvalidDiscoveredSsid)?,
+        match with_timeout(timeout, self.controller.connect_async()).await {
+            Ok(Ok(connected)) => {
+                let ssid = match Ssid::new(connected.ssid.as_bytes()) {
+                    Ok(ssid) => ssid,
+                    Err(_) => {
+                        self.state = WifiState::Failed;
+                        return Err(Error::InvalidDiscoveredSsid);
+                    }
+                };
+                let connected = ConnectedStation {
+                    ssid,
                     bssid: connected.bssid,
                     channel: connected.channel,
                     security: map_security(Some(connected.authmode)),
-                })
+                };
+                self.state = WifiState::Connected;
+                Ok(connected)
             }
-            Err(error) => {
-                self.state = WifiState::Failed;
+            Ok(Err(error)) => {
+                self.state = WifiState::Disconnected;
                 Err(error.into())
+            }
+            Err(_) if self.controller.is_connected() => self.current_connection(),
+            Err(_) => {
+                self.state = WifiState::Disconnected;
+                Err(Error::AssociationTimeout)
             }
         }
     }
 
     /// Waits until the current station association is lost.
-    pub async fn wait_for_disconnect(&mut self) -> Result<(), Error> {
-        match self.controller.wait_for_disconnect_async().await {
-            Ok(_) => {
+    ///
+    /// The driver state is polled at `poll_interval` so a missed disconnect
+    /// event cannot leave this future pending forever.
+    pub async fn wait_for_disconnect(&mut self, poll_interval: Duration) -> Result<(), Error> {
+        loop {
+            if !self.controller.is_connected() {
                 self.state = WifiState::Disconnected;
-                Ok(())
+                return Ok(());
             }
-            Err(error) => {
-                self.state = WifiState::Disconnected;
-                Err(error.into())
+
+            match with_timeout(poll_interval, self.controller.wait_for_disconnect_async()).await {
+                Ok(Ok(_)) => {
+                    self.state = WifiState::Disconnected;
+                    return Ok(());
+                }
+                Ok(Err(_)) | Err(_) if !self.controller.is_connected() => {
+                    self.state = WifiState::Disconnected;
+                    return Ok(());
+                }
+                Ok(Err(error)) => {
+                    self.state = WifiState::Failed;
+                    return Err(error.into());
+                }
+                Err(_) => {}
             }
         }
+    }
+
+    fn current_connection(&mut self) -> Result<ConnectedStation, Error> {
+        let access_point = match self.controller.ap_info() {
+            Ok(access_point) => access_point,
+            Err(error) => {
+                self.state = WifiState::Failed;
+                return Err(error.into());
+            }
+        };
+        let ssid = match Ssid::new(access_point.ssid.as_bytes()) {
+            Ok(ssid) => ssid,
+            Err(_) => {
+                self.state = WifiState::Failed;
+                return Err(Error::InvalidDiscoveredSsid);
+            }
+        };
+        let connected = ConnectedStation {
+            ssid,
+            bssid: access_point.bssid,
+            channel: access_point.channel,
+            security: map_security(access_point.auth_method),
+        };
+        self.state = WifiState::Connected;
+        Ok(connected)
     }
 }
 

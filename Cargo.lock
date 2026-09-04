@@ -667,6 +667,7 @@ dependencies = [
 name = "embedded-sdk-platform-esp32c6"
 version = "0.1.0"
 dependencies = [
+ "embassy-time",
  "embedded-sdk-bluetooth",
  "embedded-sdk-core",
  "embedded-sdk-wifi",
@@ -911,8 +912,7 @@ dependencies = [
 [[package]]
 name = "esp-radio"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23fbff98b06a96b6ce3791ecec5c668524052a068e23aacd23afe17ddba844ce"
+source = "git+https://github.com/patkepa/esp-hal.git?rev=8ef4294274bdceaabe49c1e139cfc8491fe18cd3#8ef4294274bdceaabe49c1e139cfc8491fe18cd3"
 dependencies = [
  "allocator-api2",
  "bt-hci",
@@ -942,6 +942,7 @@ dependencies = [
  "num-traits",
  "portable-atomic",
  "portable_atomic_enum",
+ "zeroize",
 ]
 
 [[package]]

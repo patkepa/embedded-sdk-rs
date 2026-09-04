@@ -19,6 +19,7 @@ embedded-sdk-core.workspace = true
 embedded-sdk-wifi = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
+embassy-time.workspace = true
 esp-hal = { workspace = true, features = ["esp32c6", "requires-unstable"] }
 esp-radio = { workspace = true, features = [
     "esp-alloc",

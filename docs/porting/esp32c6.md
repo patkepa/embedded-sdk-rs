@@ -80,7 +80,8 @@ The scanner ELF is written to
 Connect the board over USB and run:
 
 ```sh
-cargo xtask run-xiao-esp32c6
+WIFI_COUNTRY_CODE='PL' WIFI_FIRST_CHANNEL='1' WIFI_CHANNEL_COUNT='13' \
+WIFI_MAX_TX_POWER_DBM='20' cargo xtask run-xiao-esp32c6
 ```
 
 The target runner invokes `espflash flash --monitor`. The firmware prints its
@@ -110,12 +111,16 @@ fields and address-privacy considerations.
 For development-only association with a WPA2/WPA3 network:
 
 ```sh
-WIFI_SSID='network' WIFI_PASSWORD='passphrase' cargo xtask run-xiao-esp32c6
+WIFI_COUNTRY_CODE='PL' WIFI_FIRST_CHANNEL='1' WIFI_CHANNEL_COUNT='13' \
+WIFI_MAX_TX_POWER_DBM='20' WIFI_SSID='network' WIFI_PASSWORD='passphrase' \
+  cargo xtask run-xiao-esp32c6
 ```
 
-For an open network, set only `WIFI_SSID`. Omit both variables for the default
-scan-only behavior. See the [Wi-Fi guide](../connectivity/wifi.md) for the
-security and networking boundaries of this mechanism.
+For an open network, set the four regulatory values and `WIFI_SSID`. Set only
+the regulatory values for scan-only behavior. Wi-Fi remains disabled when any
+regulatory value is absent or invalid. See the
+[Wi-Fi guide](../connectivity/wifi.md) for the security and networking
+boundaries of this mechanism.
 
 ## Ownership boundaries
 

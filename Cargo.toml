@@ -75,6 +75,12 @@ minimq = { version = "=0.13.0", default-features = false }
 trouble-host = { version = "=0.6.0", default-features = false }
 zeroize = { version = "=1.9.0", default-features = false }
 
+[patch.crates-io]
+# esp-radio 0.18.0's async scan ignores ScanConfig::max and its public SSID
+# accessor silently truncates non-UTF-8 identities. Pin the reviewed fork
+# revision so dependency resolution stays reproducible.
+esp-radio = { git = "https://github.com/patkepa/esp-hal.git", rev = "8ef4294274bdceaabe49c1e139cfc8491fe18cd3" }
+
 [workspace.lints.rust]
 missing_docs = "warn"
 unsafe_code = "deny"

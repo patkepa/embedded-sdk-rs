@@ -37,7 +37,8 @@ use embedded_sdk_platform_esp32c6::{
     wifi::{Esp32c6StationController, Esp32c6Wifi, StationInterface},
 };
 use embedded_sdk_wifi::{
-    Authentication, ConfigError, Passphrase, ReconnectBackoff, ScanSummary, Ssid, StationConfig,
+    Authentication, ConfigError, CountryCode, Passphrase, ReconnectBackoff, RegulatoryDomain,
+    ScanSummary, Ssid, StationConfig,
 };
 use esp_backtrace as _;
 use esp_hal::gpio::{Level, Output, OutputConfig};
@@ -54,6 +55,10 @@ const NETWORK_TCP_RX_BUFFER_SIZE: usize = 512;
 const NETWORK_TCP_TX_BUFFER_SIZE: usize = 512;
 const NETWORK_DHCP_REPORT_INTERVAL: Duration = Duration::from_secs(30);
 const NETWORK_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
+const WIFI_SCAN_TIMEOUT: Duration = Duration::from_secs(10);
+const WIFI_ASSOCIATION_TIMEOUT: Duration = Duration::from_secs(30);
+const WIFI_DISCONNECT_POLL_INTERVAL: Duration = Duration::from_secs(10);
+const WIFI_STABLE_ASSOCIATION_INTERVAL: Duration = Duration::from_secs(30);
 const MQTT_RX_PACKET_BUFFER_SIZE: usize = 512;
 const MQTT_TX_REPLAY_BUFFER_SIZE: usize = 1024;
 const MQTT_TCP_RX_BUFFER_SIZE: usize = 1024;
@@ -130,7 +135,16 @@ async fn main(spawner: Spawner) {
         Err(error) => esp_println::println!("embedded-sdk bluetooth init failed: {error}"),
     }
 
-    let mut wifi = match Esp32c6Wifi::new(peripherals.WIFI) {
+    let regulatory_domain = match development_regulatory_domain() {
+        Ok(regulatory_domain) => regulatory_domain,
+        Err(error) => {
+            esp_println::println!("embedded-sdk wifi regulatory configuration failed: {error}");
+            loop {
+                Timer::after(Duration::from_secs(30)).await;
+            }
+        }
+    };
+    let mut wifi = match Esp32c6Wifi::new(peripherals.WIFI, regulatory_domain) {
         Ok(wifi) => wifi,
         Err(error) => {
             esp_println::println!("embedded-sdk wifi init failed: {error}");
@@ -140,7 +154,7 @@ async fn main(spawner: Spawner) {
         }
     };
 
-    match wifi.scan(20).await {
+    match wifi.scan(20, WIFI_SCAN_TIMEOUT).await {
         Ok(access_points) => {
             let summary = ScanSummary::from_access_points(&access_points);
             esp_println::println!(
@@ -701,19 +715,28 @@ async fn supervise_station(wifi: &mut Esp32c6StationController<'_>) -> ! {
     let mut backoff = ReconnectBackoff::default();
 
     loop {
-        match wifi.connect().await {
+        match wifi.connect(WIFI_ASSOCIATION_TIMEOUT).await {
             Ok(connected) => {
-                backoff.reset();
                 esp_println::println!(
                     "embedded-sdk wifi associated: channel={}, security={:?}",
                     connected.channel,
                     connected.security
                 );
 
-                match wifi.wait_for_disconnect().await {
-                    Ok(()) => esp_println::println!("embedded-sdk wifi link lost"),
-                    Err(error) => {
-                        esp_println::println!("embedded-sdk wifi disconnect wait failed: {error}")
+                match select(
+                    wifi.wait_for_disconnect(WIFI_DISCONNECT_POLL_INTERVAL),
+                    Timer::after(WIFI_STABLE_ASSOCIATION_INTERVAL),
+                )
+                .await
+                {
+                    Either::First(result) => report_wifi_disconnect(result),
+                    Either::Second(()) => {
+                        backoff.reset();
+                        esp_println::println!("embedded-sdk wifi association stable");
+                        report_wifi_disconnect(
+                            wifi.wait_for_disconnect(WIFI_DISCONNECT_POLL_INTERVAL)
+                                .await,
+                        );
                     }
                 }
             }
@@ -727,6 +750,35 @@ async fn supervise_station(wifi: &mut Esp32c6StationController<'_>) -> ! {
         );
         Timer::after(Duration::from_millis(u64::from(retry_delay_ms))).await;
     }
+}
+
+fn report_wifi_disconnect(result: Result<(), embedded_sdk_platform_esp32c6::wifi::Error>) {
+    match result {
+        Ok(()) => esp_println::println!("embedded-sdk wifi link lost"),
+        Err(error) => esp_println::println!("embedded-sdk wifi disconnect wait failed: {error}"),
+    }
+}
+
+fn development_regulatory_domain() -> Result<RegulatoryDomain, &'static str> {
+    let country = option_env!("WIFI_COUNTRY_CODE")
+        .ok_or("WIFI_COUNTRY_CODE and Wi-Fi channel/power limits must be set")?;
+    let first_channel = option_env!("WIFI_FIRST_CHANNEL")
+        .ok_or("WIFI_COUNTRY_CODE and Wi-Fi channel/power limits must be set")?
+        .parse::<u8>()
+        .map_err(|_| "WIFI_FIRST_CHANNEL must be an integer")?;
+    let channel_count = option_env!("WIFI_CHANNEL_COUNT")
+        .ok_or("WIFI_COUNTRY_CODE and Wi-Fi channel/power limits must be set")?
+        .parse::<u8>()
+        .map_err(|_| "WIFI_CHANNEL_COUNT must be an integer")?;
+    let maximum_tx_power_dbm = option_env!("WIFI_MAX_TX_POWER_DBM")
+        .ok_or("WIFI_COUNTRY_CODE and Wi-Fi channel/power limits must be set")?
+        .parse::<i8>()
+        .map_err(|_| "WIFI_MAX_TX_POWER_DBM must be an integer")?;
+    let country = CountryCode::try_from(country)
+        .map_err(|_| "WIFI_COUNTRY_CODE must be two uppercase ASCII letters or 00")?;
+
+    RegulatoryDomain::new(country, first_channel, channel_count, maximum_tx_power_dbm)
+        .map_err(|_| "Wi-Fi regulatory channel or power limits are invalid")
 }
 
 fn development_station_config() -> Result<Option<StationConfig>, ConfigError> {

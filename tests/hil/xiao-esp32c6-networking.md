@@ -13,6 +13,10 @@ Credentials and endpoint settings must be injected through the documented
 environment variables. The harness must redact their values from commands,
 logs, and artifacts.
 
+The fixture must set the country code, channel range, and maximum transmit power
+to its approved physical-deployment limits. Verify that absent or malformed
+values prevent radio startup.
+
 ## Expected serial events
 
 For a healthy connection, assert these ordered event classes without matching
@@ -42,6 +46,11 @@ success again without a device reboot.
 8. Compare allocator and firmware-size evidence with the pre-networking build.
 9. Audit captured output for SSID, password, BSSID, local/peer MAC address, and
    the configured test hostname.
+10. Stall or suppress scan and association completion events and verify the
+    ten-second scan and 30-second association deadlines without losing the
+    heartbeat or BLE service.
+11. Force rapid association flapping and verify retry delay continues growing;
+    then hold the link for 30 seconds and verify the delay resets.
 
 This scenario is release evidence, not part of the credential-free host CI
 gate.

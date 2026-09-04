@@ -11,9 +11,14 @@ The SDK's first Wi-Fi vertical slice provides:
 - An ESP32-C6 adapter in `embedded-sdk-platform-esp32c6::wifi`, built on the
   pinned `esp-radio` release.
 - Active scanning with portable results and identity-free summary reporting.
+- Caller-bounded scan results, exact byte preservation for discovered SSIDs,
+  and a ten-second scan deadline in the reference firmware.
 - Open, WPA2, WPA3, and WPA2/WPA3 station configuration and association.
 - Disconnect-event monitoring and automatic reconnection with exponential
-  backoff, bounded jitter, and reset after successful association.
+  backoff, bounded jitter, periodic state reconciliation, and reset only after
+  a stable association interval.
+- Explicit deployment-country configuration; the ESP adapter does not silently
+  inherit the driver's `CN` regulatory default.
 - Separation of the owned ESP radio controller and station packet interface so
   association recovery and `embassy-net` packet processing run concurrently.
 - DHCPv4, DNS, and bounded TCP probe integration through the SDK networking
@@ -30,9 +35,10 @@ The reference firmware initializes a 96 KiB internal heap, starts the
 selects the on-board antenna by driving GPIO14 low. It then scans up to 20
 access points and reports only the count and strongest RSSI. With station
 credentials configured, a supervisor waits for disconnect events and retries
-forever. Retry delay starts at 1 second, doubles up to a 60-second bound, adds
-up to 500 ms of hardware-random jitter within that bound, and resets after a
-successful association. The heartbeat runs independently during every delay.
+forever. Association attempts are limited to 30 seconds. Retry delay starts at
+1 second, doubles up to a 60-second bound, adds up to 500 ms of hardware-random
+jitter within that bound, and resets only after the association remains up for
+30 seconds. The heartbeat runs independently during every delay.
 After association, an independent `embassy-net` runner obtains a DHCPv4 lease
 and monitors IP configuration loss. It does not require the optional test
 probe to be configured.
@@ -40,20 +46,31 @@ probe to be configured.
 Run scan-only firmware:
 
 ```sh
-cargo xtask run-xiao-esp32c6
+WIFI_COUNTRY_CODE='PL' WIFI_FIRST_CHANNEL='1' WIFI_CHANNEL_COUNT='13' \
+WIFI_MAX_TX_POWER_DBM='20' cargo xtask run-xiao-esp32c6
 ```
 
 Associate with a WPA2/WPA3 personal network:
 
 ```sh
-WIFI_SSID='network' WIFI_PASSWORD='passphrase' cargo xtask run-xiao-esp32c6
+WIFI_COUNTRY_CODE='PL' WIFI_FIRST_CHANNEL='1' WIFI_CHANNEL_COUNT='13' \
+WIFI_MAX_TX_POWER_DBM='20' WIFI_SSID='network' WIFI_PASSWORD='passphrase' \
+  cargo xtask run-xiao-esp32c6
 ```
 
 Associate with an open network:
 
 ```sh
-WIFI_SSID='network' cargo xtask run-xiao-esp32c6
+WIFI_COUNTRY_CODE='PL' WIFI_FIRST_CHANNEL='1' WIFI_CHANNEL_COUNT='13' \
+WIFI_MAX_TX_POWER_DBM='20' WIFI_SSID='network' \
+  cargo xtask run-xiao-esp32c6
 ```
+
+The country code, first 2.4 GHz channel, channel count, and maximum transmit
+power are mandatory even in scan-only mode. The example values are for Poland;
+products must use limits approved for their actual deployment. `00` may be used
+only when the product's regulatory policy explicitly permits world-domain
+behavior.
 
 The build fails validation at runtime without attempting association when an
 SSID is empty, longer than 32 bytes, or paired with an invalid WPA passphrase.
@@ -77,9 +94,14 @@ policy must be defined before production deployment.
 - Portable application code depends on `embedded-sdk-wifi`, not `esp-radio`.
 - The ESP32-C6 port owns translation to Espressif authentication and scan types.
 - Firmware owns the allocator, scheduler startup, board RF controls, credential
-  source, retry policy, and whether radio failures are fatal or degraded.
+  source, regulatory country, retry policy, and whether radio failures are
+  fatal or degraded.
 - SSIDs are modeled as up to 32 arbitrary bytes. The current ESP station API
   accepts textual SSIDs, so the adapter rejects non-UTF-8 station identities.
+- The pinned `esp-radio` fork revision enforces its advertised result limit,
+  exposes exact scanned SSID bytes, supports explicit regulatory limits, and
+  clears station passwords on drop. Review or remove the patch when upgrading
+  the driver.
 - Scan records may contain network identity. Product telemetry should prefer
   `ScanSummary` unless explicit disclosure is required and approved.
 
