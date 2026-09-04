@@ -8,6 +8,31 @@ use crate::{HubConfig, SasError, SasToken, SymmetricKey, generate_device_sas};
 /// Largest base64 encoding of a supported decoded symmetric key.
 pub const MAX_BASE64_SYMMETRIC_KEY_LEN: usize = 88;
 
+/// Provisioned IoT Hub device-key slot.
+///
+/// Azure exposes two independently rotatable device keys. Callers should try
+/// the alternate slot after an authentication rejection before entering
+/// ordinary transient backoff.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SasKeySlot {
+    /// Device identity primary key.
+    #[default]
+    Primary,
+    /// Device identity secondary key.
+    Secondary,
+}
+
+impl SasKeySlot {
+    /// Returns the other independently provisioned device-key slot.
+    #[must_use]
+    pub const fn alternate(self) -> Self {
+        match self {
+            Self::Primary => Self::Secondary,
+            Self::Secondary => Self::Primary,
+        }
+    }
+}
+
 /// Source of one device-scoped IoT Hub symmetric key.
 ///
 /// Implementations may read protected flash, a provisioning service, or a
@@ -19,7 +44,11 @@ pub trait SasKeySource {
     type Error;
 
     /// Loads one complete base64 device key into `output`.
-    async fn load_base64_key(&mut self, output: &mut [u8]) -> Result<usize, Self::Error>;
+    async fn load_base64_key(
+        &mut self,
+        slot: SasKeySlot,
+        output: &mut [u8],
+    ) -> Result<usize, Self::Error>;
 }
 
 /// Source of short-lived device-scoped SAS credentials.
@@ -102,6 +131,7 @@ pub struct DeviceSasProvider<K, T> {
     time: T,
     validity_seconds: u64,
     refresh_margin_seconds: u64,
+    active_slot: SasKeySlot,
 }
 
 impl<K, T> DeviceSasProvider<K, T> {
@@ -120,6 +150,7 @@ impl<K, T> DeviceSasProvider<K, T> {
             time,
             validity_seconds,
             refresh_margin_seconds,
+            active_slot: SasKeySlot::Primary,
         })
     }
 
@@ -131,6 +162,25 @@ impl<K, T> DeviceSasProvider<K, T> {
     /// Returns the trusted-time provider.
     pub const fn time(&self) -> &T {
         &self.time
+    }
+
+    /// Returns the key slot used by the next credential acquisition.
+    #[must_use]
+    pub const fn active_slot(&self) -> SasKeySlot {
+        self.active_slot
+    }
+
+    /// Selects the key slot used by subsequent credential acquisitions.
+    ///
+    /// Existing [`SasToken`] values are unaffected. A connection supervisor
+    /// can select the alternate slot after IoT Hub rejects authentication.
+    pub const fn select_slot(&mut self, slot: SasKeySlot) {
+        self.active_slot = slot;
+    }
+
+    /// Selects the other provisioned key slot for the next acquisition.
+    pub const fn select_alternate_slot(&mut self) {
+        self.active_slot = self.active_slot.alternate();
     }
 
     /// Releases the owned key source and trusted-time provider.
@@ -150,7 +200,7 @@ where
         let mut encoded = Zeroizing::new([0_u8; MAX_BASE64_SYMMETRIC_KEY_LEN]);
         let len = self
             .key_source
-            .load_base64_key(&mut encoded[..])
+            .load_base64_key(self.active_slot, &mut encoded[..])
             .await
             .map_err(SasCredentialError::Source)?;
         let encoded = encoded
@@ -193,13 +243,30 @@ mod tests {
         }
     }
 
-    struct MemoryKeySource(Result<usize, &'static str>);
+    struct MemoryKeySource {
+        result: Result<usize, &'static str>,
+        requested_slot: Option<SasKeySlot>,
+    }
+
+    impl MemoryKeySource {
+        const fn new(result: Result<usize, &'static str>) -> Self {
+            Self {
+                result,
+                requested_slot: None,
+            }
+        }
+    }
 
     impl SasKeySource for MemoryKeySource {
         type Error = &'static str;
 
-        async fn load_base64_key(&mut self, output: &mut [u8]) -> Result<usize, Self::Error> {
-            let len = self.0?;
+        async fn load_base64_key(
+            &mut self,
+            slot: SasKeySlot,
+            output: &mut [u8],
+        ) -> Result<usize, Self::Error> {
+            self.requested_slot = Some(slot);
+            let len = self.result?;
             if len <= KEY.len() && len <= output.len() {
                 output[..len].copy_from_slice(&KEY[..len]);
             }
@@ -231,7 +298,8 @@ mod tests {
     #[test]
     fn provider_loads_a_runtime_key_and_returns_a_short_lived_token() {
         let mut provider =
-            DeviceSasProvider::new(MemoryKeySource(Ok(KEY.len())), FixedTime, 3_600, 300).unwrap();
+            DeviceSasProvider::new(MemoryKeySource::new(Ok(KEY.len())), FixedTime, 3_600, 300)
+                .unwrap();
         let token = block_on(provider.acquire(&hub())).unwrap();
         assert_eq!(token.lease().issued_at().as_seconds(), 1_700_000_000);
         assert_eq!(token.lease().expires_at().as_seconds(), 1_700_003_600);
@@ -241,25 +309,56 @@ mod tests {
                 .as_bytes()
                 .starts_with(b"SharedAccessSignature ")
         );
+        assert_eq!(
+            provider.key_source_mut().requested_slot,
+            Some(SasKeySlot::Primary)
+        );
+    }
+
+    #[test]
+    fn provider_switches_between_independent_rotation_slots() {
+        let mut provider =
+            DeviceSasProvider::new(MemoryKeySource::new(Ok(KEY.len())), FixedTime, 3_600, 300)
+                .unwrap();
+        assert_eq!(provider.active_slot(), SasKeySlot::Primary);
+
+        provider.select_alternate_slot();
+        assert_eq!(provider.active_slot(), SasKeySlot::Secondary);
+        let _token = block_on(provider.acquire(&hub())).unwrap();
+        assert_eq!(
+            provider.key_source_mut().requested_slot,
+            Some(SasKeySlot::Secondary)
+        );
+
+        provider.select_slot(SasKeySlot::Primary);
+        let _token = block_on(provider.acquire(&hub())).unwrap();
+        assert_eq!(
+            provider.key_source_mut().requested_slot,
+            Some(SasKeySlot::Primary)
+        );
     }
 
     #[test]
     fn provider_rejects_bad_policy_and_source_results_without_leaking_errors() {
         assert!(matches!(
-            DeviceSasProvider::new(MemoryKeySource(Ok(KEY.len())), FixedTime, 300, 300),
+            DeviceSasProvider::new(MemoryKeySource::new(Ok(KEY.len())), FixedTime, 300, 300),
             Err(SasProviderConfigError::InvalidLifetime)
         ));
 
-        let mut failed =
-            DeviceSasProvider::new(MemoryKeySource(Err("raw-key-secret")), FixedTime, 600, 60)
-                .unwrap();
+        let mut failed = DeviceSasProvider::new(
+            MemoryKeySource::new(Err("raw-key-secret")),
+            FixedTime,
+            600,
+            60,
+        )
+        .unwrap();
         let error = block_on(failed.acquire(&hub())).unwrap_err();
         let debug = std::format!("{error:?}");
         assert_eq!(debug, "SasCredentialError::Source(**REDACTED**)");
         assert!(!debug.contains("raw-key-secret"));
 
         let mut oversized = DeviceSasProvider::new(
-            MemoryKeySource(Ok(MAX_BASE64_SYMMETRIC_KEY_LEN + 1)),
+            MemoryKeySource::new(Ok(MAX_BASE64_SYMMETRIC_KEY_LEN + 1)),
             FixedTime,
             600,
             60,

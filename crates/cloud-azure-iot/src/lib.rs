@@ -34,7 +34,7 @@ pub use config::{
 };
 pub use credentials::{
     DeviceSasProvider, MAX_BASE64_SYMMETRIC_KEY_LEN, SasCredentialError, SasCredentialProvider,
-    SasKeySource, SasProviderConfigError,
+    SasKeySlot, SasKeySource, SasProviderConfigError,
 };
 pub use method_queue::{
     DIRECT_METHOD_OVERLOAD_STATUS, DIRECT_METHOD_TIMEOUT_STATUS, DirectMethodDispatch,

@@ -52,8 +52,10 @@ snapshots.
 9. The Azure provider defines the first focused async credential boundary: a
    caller-supplied key source fills temporary zeroizing storage, device-scoped
    SAS generation consumes trusted time, and only the short-lived redacted
-   token survives for MQTT connection setup. A concrete protected key source
-   remains a firmware/platform responsibility.
+   token survives for MQTT connection setup. The boundary names Azure's
+   primary and secondary key slots so firmware can rotate after an
+   authentication rejection without exposing key material. A concrete
+   protected key source remains a firmware/platform responsibility.
 
 ## Consequences
 
