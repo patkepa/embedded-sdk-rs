@@ -3183,6 +3183,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "xiao-esp32c6-azure-iot"
+version = "0.1.0"
+dependencies = [
+ "embassy-executor",
+ "embassy-net",
+ "embassy-time",
+ "embedded-sdk-board-xiao-esp32c6",
+ "embedded-sdk-cloud-azure-iot",
+ "embedded-sdk-mqtt-v311",
+ "embedded-sdk-networking-embassy-net",
+ "embedded-sdk-platform-esp32c6",
+ "embedded-sdk-security",
+ "embedded-sdk-wifi",
+ "esp-alloc",
+ "esp-backtrace",
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-println",
+ "esp-rtos",
+ "getrandom",
+ "static_cell",
+]
+
+[[package]]
 name = "xiao-esp32c6-beacon"
 version = "0.1.0"
 dependencies = [

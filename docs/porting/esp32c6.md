@@ -20,14 +20,19 @@ The initial firmware proves:
   probe through `embassy-net`.
 - A compile-tested MQTT 5 plaintext fixture with bounded packet buffers,
   queueing, session recovery, and independent reconnect behavior.
+- A dedicated Azure IoT preflight image with hardware-RNG registration,
+  public configuration validation, DNS resolution, fixed MQTT 3.1.1 replay
+  storage, and bounded RAM telemetry queueing. Authenticated cloud traffic is
+  still gated on trusted time, trust roots, and runtime credentials.
 - Connectable BLE advertising and a reference GATT status service through
   TrouBLE.
 - Dedicated non-connectable iBeacon advertising with deployment-configurable
   identity, interval, calibrated RSSI, and controller TX power.
 - Concurrent Wi-Fi/BLE radio operation through Espressif coexistence support.
 
-Secure BLE provisioning and bonding, IEEE 802.15.4/OpenThread, authenticated
-TLS/MQTT, production cloud protocols, and OTA are not part of this bring-up.
+Secure BLE provisioning and bonding, IEEE 802.15.4/OpenThread, live
+authenticated TLS/MQTT, production cloud protocols, and OTA are not part of
+this bring-up.
 
 ## Toolchain
 
@@ -64,6 +69,12 @@ Build the dedicated BLE scanner firmware with:
 cargo xtask build-xiao-esp32c6-beacon-scanner
 ```
 
+Build the dedicated Azure IoT preflight firmware with:
+
+```sh
+cargo xtask build-xiao-esp32c6-azure-iot
+```
+
 The resulting ELF is written below:
 
 ```text
@@ -74,6 +85,8 @@ The beacon ELF is written to
 `target/riscv32imac-unknown-none-elf/release/xiao-esp32c6-beacon`.
 The scanner ELF is written to
 `target/riscv32imac-unknown-none-elf/release/xiao-esp32c6-beacon-scanner`.
+The Azure IoT ELF is written to
+`target/riscv32imac-unknown-none-elf/release/xiao-esp32c6-azure-iot`.
 
 ## Flash and monitor
 
@@ -107,6 +120,18 @@ cargo xtask run-xiao-esp32c6-beacon-scanner
 See the [Beacon Scanner Guide](../connectivity/beacon-scanner.md) for output
 fields and address-privacy considerations.
 
+To flash the Azure IoT preflight image, run:
+
+```sh
+cargo xtask run-xiao-esp32c6-azure-iot
+```
+
+Its safe default does not connect to Azure. Public hub settings and Wi-Fi
+development inputs are documented in the
+[firmware guide](../../firmware/seeed/xiao-esp32c6-azure-iot/README.md). Do not
+provide a connection string, symmetric key, or reusable SAS token as a build
+input.
+
 For development-only association with a WPA2/WPA3 network:
 
 ```sh
@@ -129,6 +154,9 @@ security and networking boundaries of this mechanism.
   beacon product image and its deployment settings.
 - `firmware/seeed/xiao-esp32c6-beacon-scanner` owns the independent BLE
   observation and USB-serial diagnostic image.
+- `firmware/seeed/xiao-esp32c6-azure-iot` owns the Azure-specific resource
+  budgets, application policy, configuration gate, and eventually the full
+  supervised cloud connection.
 
 The firmware drives the XIAO user LED on GPIO15 and deliberately passes `TIMG0`
 and `SW_INTERRUPT` to the platform runtime explicitly. Platform code must not

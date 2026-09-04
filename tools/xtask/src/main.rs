@@ -10,6 +10,7 @@ const ESP32C6_TARGET: &str = "riscv32imac-unknown-none-elf";
 const XIAO_ESP32C6_BEACON: &str = "xiao-esp32c6-beacon";
 const XIAO_ESP32C6_BEACON_SCANNER: &str = "xiao-esp32c6-beacon-scanner";
 const XIAO_ESP32C6_FIRMWARE: &str = "xiao-esp32c6-firmware";
+const XIAO_ESP32C6_AZURE_IOT: &str = "xiao-esp32c6-azure-iot";
 
 fn main() -> ExitCode {
     let command = env::args().nth(1).unwrap_or_else(|| "help".to_owned());
@@ -39,6 +40,14 @@ fn main() -> ExitCode {
             ESP32C6_TARGET,
             "--release",
         ]),
+        "build-xiao-esp32c6-azure-iot" => cargo([
+            "build",
+            "-p",
+            XIAO_ESP32C6_AZURE_IOT,
+            "--target",
+            ESP32C6_TARGET,
+            "--release",
+        ]),
         "check" => check(),
         "doctor" => doctor(),
         "run-xiao-esp32c6" => cargo([
@@ -61,6 +70,14 @@ fn main() -> ExitCode {
             "run",
             "-p",
             XIAO_ESP32C6_BEACON_SCANNER,
+            "--target",
+            ESP32C6_TARGET,
+            "--release",
+        ]),
+        "run-xiao-esp32c6-azure-iot" => cargo([
+            "run",
+            "-p",
+            XIAO_ESP32C6_AZURE_IOT,
             "--target",
             ESP32C6_TARGET,
             "--release",
@@ -93,6 +110,8 @@ fn check() -> Result<(), String> {
         XIAO_ESP32C6_BEACON,
         "--exclude",
         XIAO_ESP32C6_BEACON_SCANNER,
+        "--exclude",
+        XIAO_ESP32C6_AZURE_IOT,
         "--all-targets",
         "--",
         "-D",
@@ -111,6 +130,8 @@ fn host_tests() -> Result<(), String> {
         XIAO_ESP32C6_BEACON,
         "--exclude",
         XIAO_ESP32C6_BEACON_SCANNER,
+        "--exclude",
+        XIAO_ESP32C6_AZURE_IOT,
     ])
 }
 
@@ -191,6 +212,8 @@ fn print_help() {
     println!("  cargo xtask doctor         verify ESP32-C6 development tools");
     println!("  cargo xtask build-xiao-esp32c6  build release firmware");
     println!("  cargo xtask run-xiao-esp32c6    build, flash, and monitor firmware");
+    println!("  cargo xtask build-xiao-esp32c6-azure-iot  build Azure IoT firmware");
+    println!("  cargo xtask run-xiao-esp32c6-azure-iot    flash and monitor Azure IoT firmware");
     println!("  cargo xtask build-xiao-esp32c6-beacon  build iBeacon firmware");
     println!("  cargo xtask run-xiao-esp32c6-beacon    build, flash, and monitor iBeacon");
     println!("  cargo xtask build-xiao-esp32c6-beacon-scanner  build BLE scanner firmware");

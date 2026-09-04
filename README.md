@@ -31,6 +31,12 @@ existing XIAO firmware's plaintext transport remains a local fixture; neither
 path is production support until the authenticated TLS and hardware validation
 gates pass. See the [MQTT guide](docs/connectivity/mqtt.md).
 
+The dedicated XIAO Azure IoT firmware now compile-checks public hub identity,
+hardware entropy registration, DNS resolution, fixed MQTT replay storage, and
+a bounded RAM telemetry queue. It intentionally stops before authentication
+until trusted time, trust roots, and a runtime credential source are composed.
+See its [firmware guide](firmware/seeed/xiao-esp32c6-azure-iot/README.md).
+
 A dedicated non-connectable iBeacon firmware is also available for the XIAO
 ESP32C6. See the [Beacon Guide](docs/connectivity/beacon.md) for deployment
 configuration, flashing, calibration, and production boundaries.
@@ -42,8 +48,8 @@ rolling device list over its USB serial connection. See the
 802.15.4/OpenThread, production cloud support, board-specific storage backends,
 and OTA remain planned. The Azure work now includes an experimental `no_std`,
 allocator-backed TLS 1.2 stream with caller-owned record buffers; it is not
-production support until its verification, hardware RNG, resource, and live
-service gates pass. The complete scope is documented in the
+production support until its verification, resource, and live-service gates
+pass. The complete scope is documented in the
 [Azure IoT Hub Integration Plan](docs/plans/azure-iot-hub.md).
 
 Portable trusted-time, credential-lifetime, secure-random, and zeroizing

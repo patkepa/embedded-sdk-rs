@@ -32,3 +32,4 @@ jobs:
           targets: riscv32imac-unknown-none-elf
       - uses: Swatinem/rust-cache@v2
       - run: cargo xtask build-xiao-esp32c6
+      - run: cargo xtask build-xiao-esp32c6-azure-iot
