@@ -33,6 +33,10 @@ pub enum ConfigError {
     EmptyRootStore,
     /// A supplied DER certificate was not a valid trust anchor.
     InvalidRootCertificate(rustls::Error),
+    /// A supplied PEM document was malformed or exceeded decode scratch.
+    InvalidPemRoot(pem_rfc7468::Error),
+    /// A PEM trust anchor did not use the `CERTIFICATE` label.
+    UnexpectedPemLabel,
     /// The plaintext fragment policy was outside the supported range.
     InvalidFragmentSize,
     /// The selected provider and TLS 1.2 policy were incompatible.
@@ -46,6 +50,10 @@ impl fmt::Display for ConfigError {
         match self {
             Self::EmptyRootStore => formatter.write_str("TLS root store must not be empty"),
             Self::InvalidRootCertificate(_) => formatter.write_str("invalid TLS root certificate"),
+            Self::InvalidPemRoot(_) => formatter.write_str("invalid PEM TLS root certificate"),
+            Self::UnexpectedPemLabel => {
+                formatter.write_str("TLS root PEM must use the CERTIFICATE label")
+            }
             Self::InvalidFragmentSize => formatter.write_str("invalid TLS fragment size"),
             Self::InvalidCryptoPolicy(_) => formatter.write_str("invalid TLS crypto policy"),
             Self::UntrustedTime(_) => {
@@ -56,6 +64,72 @@ impl fmt::Display for ConfigError {
 }
 
 impl core::error::Error for ConfigError {}
+
+/// Parsed TLS trust anchors owned independently from connection policy.
+///
+/// Firmware can validate and retain a versioned root bundle before trusted
+/// wall-clock time becomes available. Building a [`TlsClientConfig`] still
+/// fails closed unless its separate [`TrustedTime`] provider succeeds.
+#[derive(Clone)]
+pub struct TlsRootStore {
+    inner: RootCertStore,
+}
+
+impl TlsRootStore {
+    /// Parses DER-encoded root certificates into an owned trust store.
+    pub fn from_der_roots<'a>(
+        roots: impl IntoIterator<Item = &'a [u8]>,
+    ) -> Result<Self, ConfigError> {
+        let mut inner = RootCertStore::empty();
+        for root in roots {
+            inner
+                .add(CertificateDer::from(root))
+                .map_err(ConfigError::InvalidRootCertificate)?;
+        }
+        Self::from_root_store(inner)
+    }
+
+    /// Decodes RFC 7468 `CERTIFICATE` roots using reusable caller scratch.
+    ///
+    /// Scratch must hold the largest decoded certificate in the input bundle.
+    /// It is reused for every root and is not retained by the returned store.
+    pub fn from_pem_roots<'a>(
+        roots: impl IntoIterator<Item = &'a [u8]>,
+        decode_scratch: &mut [u8],
+    ) -> Result<Self, ConfigError> {
+        let mut inner = RootCertStore::empty();
+        for root in roots {
+            let (label, der) =
+                pem_rfc7468::decode(root, decode_scratch).map_err(ConfigError::InvalidPemRoot)?;
+            if label != "CERTIFICATE" {
+                return Err(ConfigError::UnexpectedPemLabel);
+            }
+            inner
+                .add(CertificateDer::from(der))
+                .map_err(ConfigError::InvalidRootCertificate)?;
+        }
+        Self::from_root_store(inner)
+    }
+
+    /// Returns the number of independently trusted roots.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Returns whether the trust set contains no roots.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    fn from_root_store(inner: RootCertStore) -> Result<Self, ConfigError> {
+        if inner.is_empty() {
+            return Err(ConfigError::EmptyRootStore);
+        }
+        Ok(Self { inner })
+    }
+}
 
 #[derive(Debug)]
 struct SnapshotTime(UnixTime);
@@ -90,13 +164,37 @@ impl TlsClientConfig {
         trusted_time: &impl TrustedTime,
         max_plaintext_fragment: usize,
     ) -> Result<Self, ConfigError> {
-        let mut root_store = RootCertStore::empty();
-        for root in roots {
-            root_store
-                .add(CertificateDer::from(root))
-                .map_err(ConfigError::InvalidRootCertificate)?;
-        }
-        Self::from_root_store(root_store, trusted_time, max_plaintext_fragment)
+        Self::from_trust_roots(
+            TlsRootStore::from_der_roots(roots)?,
+            trusted_time,
+            max_plaintext_fragment,
+        )
+    }
+
+    /// Builds a TLS 1.2-only configuration from PEM-encoded roots.
+    ///
+    /// The caller-owned decode scratch must hold the largest decoded root and
+    /// may be reused after this function returns.
+    pub fn from_pem_roots<'a>(
+        roots: impl IntoIterator<Item = &'a [u8]>,
+        decode_scratch: &mut [u8],
+        trusted_time: &impl TrustedTime,
+        max_plaintext_fragment: usize,
+    ) -> Result<Self, ConfigError> {
+        Self::from_trust_roots(
+            TlsRootStore::from_pem_roots(roots, decode_scratch)?,
+            trusted_time,
+            max_plaintext_fragment,
+        )
+    }
+
+    /// Builds a TLS configuration from a previously validated trust bundle.
+    pub fn from_trust_roots(
+        trust_roots: TlsRootStore,
+        trusted_time: &impl TrustedTime,
+        max_plaintext_fragment: usize,
+    ) -> Result<Self, ConfigError> {
+        Self::from_root_store(trust_roots.inner, trusted_time, max_plaintext_fragment)
     }
 
     /// Builds a TLS 1.2-only configuration from a prepared root store.
@@ -686,6 +784,22 @@ mod tests {
         assert!(matches!(
             TlsClientConfig::from_root_store(RootCertStore::empty(), &FixedTime(Ok(NOW)), 1024),
             Err(ConfigError::EmptyRootStore)
+        ));
+    }
+
+    #[test]
+    fn rejects_empty_and_wrongly_labeled_pem_root_bundles() {
+        let mut scratch = [0_u8; 16];
+        let empty: [&[u8]; 0] = [];
+        assert!(matches!(
+            TlsRootStore::from_pem_roots(empty, &mut scratch),
+            Err(ConfigError::EmptyRootStore)
+        ));
+
+        let private_key = b"-----BEGIN PRIVATE KEY-----\nMAA=\n-----END PRIVATE KEY-----\n";
+        assert!(matches!(
+            TlsRootStore::from_pem_roots([private_key.as_slice()], &mut scratch),
+            Err(ConfigError::UnexpectedPemLabel)
         ));
     }
 

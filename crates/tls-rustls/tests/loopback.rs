@@ -19,7 +19,9 @@ use embedded_sdk_mqtt_v311::{
     TransportSecurity,
 };
 use embedded_sdk_security::{TimeError, TrustedTime, UnixTime};
-use embedded_sdk_tls_rustls::{Error, TlsBuffers, TlsClientConfig, TlsStream};
+use embedded_sdk_tls_rustls::{
+    ConfigError, Error, TlsBuffers, TlsClientConfig, TlsRootStore, TlsStream,
+};
 use rcgen::{
     CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_RSA_SHA256, date_time_ymd,
 };
@@ -322,6 +324,28 @@ impl Write for LoopbackServer {
 fn config_for(identity: &TestIdentity, time: UnixTime) -> TlsClientConfig {
     TlsClientConfig::from_der_roots([identity.certificate.as_ref()], &FixedTime(time), 1024)
         .unwrap()
+}
+
+#[test]
+fn pem_root_bundle_uses_bounded_decode_scratch() {
+    let identity = test_identity(HOSTNAME);
+    let pem = pem_rfc7468::encode_string(
+        "CERTIFICATE",
+        pem_rfc7468::LineEnding::LF,
+        identity.certificate.as_ref(),
+    )
+    .unwrap();
+    let mut scratch = [0_u8; 2048];
+    let roots = TlsRootStore::from_pem_roots([pem.as_bytes()], &mut scratch).unwrap();
+    assert_eq!(roots.len(), 1);
+    let config = TlsClientConfig::from_trust_roots(roots, &FixedTime(NOW), 1024).unwrap();
+    assert_eq!(config.max_plaintext_fragment(), 1024);
+
+    let mut too_small = [0_u8; 32];
+    assert!(matches!(
+        TlsRootStore::from_pem_roots([pem.as_bytes()], &mut too_small),
+        Err(ConfigError::InvalidPemRoot(_))
+    ));
 }
 
 struct FixedTime(UnixTime);

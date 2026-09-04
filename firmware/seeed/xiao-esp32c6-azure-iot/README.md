@@ -6,9 +6,11 @@ leak into generic firmware.
 
 The current slice boots Wi-Fi, registers the ESP32-C6 hardware-random backend,
 owns fixed MQTT and telemetry-queue storage, validates public Azure identity
-configuration, resolves the hub, and fails closed before authentication. A
-live connection remains disabled until the firmware has a trusted-time source,
-an updateable trust bundle, and a runtime credential source.
+configuration, validates the two firmware-owned IoT Hub root certificates,
+resolves the hub, and fails closed before authentication. A live connection
+remains disabled until the firmware has a trusted-time source and a runtime
+credential source. The current trust bundle is replaceable through a firmware
+update; independently updateable protected trust storage remains open.
 
 Public development inputs are compiled into the reference image:
 

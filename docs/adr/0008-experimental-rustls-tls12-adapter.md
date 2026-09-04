@@ -81,7 +81,8 @@ following pass:
    CONNECT and QoS 1 PUBLISH/PUBACK exchange through this stream;
 3. an ESP32-C6 hardware RNG binding with startup and continuous failure tests
    (the opt-in port adapter and `getrandom` bridge compile; final firmware
-   registration and HIL entropy evidence remain);
+  registration is now present in the dedicated firmware; HIL entropy evidence
+  remains);
 4. successful target link, on-device handshake, reconnect, and cancellation;
 5. measured peak heap, heap fragmentation, stack, flash, record buffers, and
    handshake latency under concurrent firmware workloads;

@@ -11,6 +11,7 @@ repository.workspace = true
 embedded-io-async.workspace = true
 embedded-sdk-security.workspace = true
 getrandom.workspace = true
+pem-rfc7468.workspace = true
 rustls.workspace = true
 rustls-rustcrypto.workspace = true
 

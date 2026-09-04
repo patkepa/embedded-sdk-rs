@@ -17,6 +17,7 @@ use embedded_sdk_platform_esp32c6::{
     wifi::{Esp32c6StationController, Esp32c6Wifi, StationInterface},
 };
 use embedded_sdk_security::SecureRandom;
+use embedded_sdk_tls_rustls::TlsRootStore;
 use embedded_sdk_wifi::{
     Authentication, ConfigError as WifiConfigError, Passphrase, ReconnectBackoff, Ssid,
     StationConfig,
@@ -37,7 +38,12 @@ const MQTT_PACKET_CAPACITY: usize = 1024;
 const MQTT_REPLAY_CAPACITY: usize = 1024;
 const TELEMETRY_QUEUE_DEPTH: usize = 4;
 const TELEMETRY_PAYLOAD_CAPACITY: usize = 256;
+const MAX_ROOT_CERTIFICATE_DER_SIZE: usize = 1452;
 const HEARTBEAT_PAYLOAD: &[u8] = br#"{"version":1,"kind":"heartbeat"}"#;
+const AZURE_SERVER_ROOTS: [&[u8]; 2] = [
+    include_bytes!("../certificates/digicert-global-root-g2.pem"),
+    include_bytes!("../certificates/microsoft-rsa-root-2017.pem"),
+];
 
 getrandom::register_custom_getrandom!(fill_getrandom_after_radio_started);
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -186,6 +192,15 @@ async fn wifi_station_task(mut controller: Esp32c6StationController<'static>) {
 
 #[embassy_executor::task]
 async fn azure_preflight_task(network: EmbassyNetwork<'static>, azure: AzurePublicConfig) {
+    let mut root_decode_scratch = [0_u8; MAX_ROOT_CERTIFICATE_DER_SIZE];
+    let trust_roots =
+        match TlsRootStore::from_pem_roots(AZURE_SERVER_ROOTS, &mut root_decode_scratch) {
+            Ok(roots) => roots,
+            Err(error) => {
+                esp_println::println!("azure-iot TLS trust bundle failed: {error}");
+                return;
+            }
+        };
     // These arrays make the firmware, rather than the MQTT crate, own the
     // exact packet and reconnect-replay budget.
     let mut mqtt_rx = [0; MQTT_PACKET_CAPACITY];
@@ -268,6 +283,7 @@ async fn azure_preflight_task(network: EmbassyNetwork<'static>, azure: AzurePubl
             Ok(Err(error)) => esp_println::println!("azure-iot DNS failed: {error}"),
             Err(_) => esp_println::println!("azure-iot DNS timed out"),
         }
+        esp_println::println!("azure-iot TLS roots validated: count={}", trust_roots.len());
         let _ = network.wait_ip_down().await;
     }
 }

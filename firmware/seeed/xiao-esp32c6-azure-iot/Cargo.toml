@@ -24,6 +24,7 @@ embedded-sdk-mqtt-v311.workspace = true
 embedded-sdk-networking-embassy-net.workspace = true
 embedded-sdk-platform-esp32c6 = { workspace = true, features = ["hardware-rng", "wifi"] }
 embedded-sdk-security.workspace = true
+embedded-sdk-tls-rustls.workspace = true
 embedded-sdk-wifi.workspace = true
 esp-alloc = { workspace = true, features = ["compat", "esp32c6", "global-allocator"] }
 esp-backtrace = { workspace = true, features = ["esp32c6", "panic-handler", "println"] }
