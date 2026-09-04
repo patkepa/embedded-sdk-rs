@@ -40,19 +40,19 @@ probe to be configured.
 Run scan-only firmware:
 
 ```sh
-cargo xtask run-xiao-esp32c6
+cargo xtask run xiao-esp32c6
 ```
 
 Associate with a WPA2/WPA3 personal network:
 
 ```sh
-WIFI_SSID='network' WIFI_PASSWORD='passphrase' cargo xtask run-xiao-esp32c6
+WIFI_SSID='network' WIFI_PASSWORD='passphrase' cargo xtask run xiao-esp32c6
 ```
 
 Associate with an open network:
 
 ```sh
-WIFI_SSID='network' cargo xtask run-xiao-esp32c6
+WIFI_SSID='network' cargo xtask run xiao-esp32c6
 ```
 
 The build fails validation at runtime without attempting association when an

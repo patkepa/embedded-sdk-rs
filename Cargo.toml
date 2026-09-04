@@ -2,9 +2,9 @@
 resolver = "3"
 members = [
     "crates/*",
-    "ports/espressif/*",
-    "boards/seeed/*",
-    "firmware/seeed/*",
+    "ports/*/*",
+    "boards/*/*",
+    "firmware/*/*",
     "tests/host",
     "tools/xtask",
 ]

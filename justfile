@@ -7,20 +7,17 @@ check:
 test:
     cargo xtask test
 
-build-xiao-esp32c6:
-    cargo xtask build-xiao-esp32c6
+list:
+    cargo xtask list
 
-run-xiao-esp32c6:
-    cargo xtask run-xiao-esp32c6
+build firmware:
+    cargo xtask build {{firmware}}
 
-build-xiao-esp32c6-beacon:
-    cargo xtask build-xiao-esp32c6-beacon
+run firmware:
+    cargo xtask run {{firmware}}
 
-run-xiao-esp32c6-beacon:
-    cargo xtask run-xiao-esp32c6-beacon
+build-all:
+    cargo xtask build-all
 
-build-xiao-esp32c6-beacon-scanner:
-    cargo xtask build-xiao-esp32c6-beacon-scanner
-
-run-xiao-esp32c6-beacon-scanner:
-    cargo xtask run-xiao-esp32c6-beacon-scanner
+doctor board="":
+    cargo xtask doctor {{board}}

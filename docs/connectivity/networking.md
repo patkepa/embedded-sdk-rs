@@ -72,7 +72,7 @@ Configure the station using the existing development-only environment values:
 
 ```sh
 WIFI_SSID='network' WIFI_PASSWORD='passphrase' \
-  cargo xtask run-xiao-esp32c6
+  cargo xtask run xiao-esp32c6
 ```
 
 After association, diagnostics distinguish link-up with DHCP pending from an
@@ -91,7 +91,7 @@ connection after every newly acquired lease:
 ```sh
 WIFI_SSID='network' WIFI_PASSWORD='passphrase' \
 NETWORK_TEST_HOST='sdk-test.internal' NETWORK_TEST_PORT='9000' \
-  cargo xtask run-xiao-esp32c6
+  cargo xtask run xiao-esp32c6
 ```
 
 The hostname and listener must be owned by the test environment. No public

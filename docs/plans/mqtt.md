@@ -340,7 +340,7 @@ security acceptance criteria.
 ### Host and compile checks
 
 - `cargo xtask check`
-- `cargo xtask build-xiao-esp32c6`
+- `cargo xtask build xiao-esp32c6`
 - `cargo tree -d`
 - portable packages compile with default features and remain `no_std`;
 - public APIs are documented and clean under `-D warnings`;

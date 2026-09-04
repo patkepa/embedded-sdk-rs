@@ -19,13 +19,13 @@ counter increases.
 Build the scanner:
 
 ```sh
-cargo xtask build-xiao-esp32c6-beacon-scanner
+cargo xtask build xiao-esp32c6/beacon-scanner
 ```
 
 Connect the board over USB, then flash and monitor it:
 
 ```sh
-cargo xtask run-xiao-esp32c6-beacon-scanner
+cargo xtask run xiao-esp32c6/beacon-scanner
 ```
 
 The ELF is written to:

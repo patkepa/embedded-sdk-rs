@@ -282,7 +282,7 @@ Embassy or ESP32-C6.
 ### Host and compile checks
 
 - `cargo xtask check`
-- `cargo xtask build-xiao-esp32c6`
+- `cargo xtask build xiao-esp32c6`
 - `cargo tree -d`
 - Portable crates build with default features and remain `no_std`.
 - Public APIs have documentation and no new warnings under `-D warnings`.

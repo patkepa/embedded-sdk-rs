@@ -48,25 +48,25 @@ cargo install espflash
 Validate the development environment:
 
 ```sh
-cargo xtask doctor
+cargo xtask doctor xiao-esp32c6
 ```
 
 ## Build
 
 ```sh
-cargo xtask build-xiao-esp32c6
+cargo xtask build xiao-esp32c6
 ```
 
 Build the dedicated beacon firmware with:
 
 ```sh
-cargo xtask build-xiao-esp32c6-beacon
+cargo xtask build xiao-esp32c6/beacon
 ```
 
 Build the dedicated BLE scanner firmware with:
 
 ```sh
-cargo xtask build-xiao-esp32c6-beacon-scanner
+cargo xtask build xiao-esp32c6/beacon-scanner
 ```
 
 Build the dedicated Azure IoT preflight firmware with:
@@ -93,7 +93,7 @@ The Azure IoT ELF is written to
 Connect the board over USB and run:
 
 ```sh
-cargo xtask run-xiao-esp32c6
+cargo xtask run xiao-esp32c6
 ```
 
 The target runner invokes `espflash flash --monitor`. The firmware prints its
@@ -105,7 +105,7 @@ not reveal nearby SSIDs or BSSIDs. Bluetooth logs omit local and peer addresses.
 To flash the non-connectable beacon instead, run:
 
 ```sh
-cargo xtask run-xiao-esp32c6-beacon
+cargo xtask run xiao-esp32c6/beacon
 ```
 
 See the [Beacon Guide](../connectivity/beacon.md) before assigning deployment
@@ -114,7 +114,7 @@ identifiers or making RF range and battery-life assumptions.
 To flash the BLE scanner and monitor its rolling device list, run:
 
 ```sh
-cargo xtask run-xiao-esp32c6-beacon-scanner
+cargo xtask run xiao-esp32c6/beacon-scanner
 ```
 
 See the [Beacon Scanner Guide](../connectivity/beacon-scanner.md) for output
@@ -135,7 +135,7 @@ input.
 For development-only association with a WPA2/WPA3 network:
 
 ```sh
-WIFI_SSID='network' WIFI_PASSWORD='passphrase' cargo xtask run-xiao-esp32c6
+WIFI_SSID='network' WIFI_PASSWORD='passphrase' cargo xtask run xiao-esp32c6
 ```
 
 For an open network, set only `WIFI_SSID`. Omit both variables for the default
