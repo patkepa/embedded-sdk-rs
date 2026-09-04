@@ -1,0 +1,28 @@
+[package]
+name = "embedded-sdk-tls-rustls"
+description = "Experimental TLS 1.2 client adapter over generic async byte streams"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+embedded-io-async.workspace = true
+embedded-sdk-security.workspace = true
+getrandom.workspace = true
+pem-rfc7468.workspace = true
+rustls.workspace = true
+rustls-rustcrypto.workspace = true
+
+[dev-dependencies]
+embedded-sdk-cloud-azure-iot.workspace = true
+embedded-sdk-mqtt.workspace = true
+embedded-sdk-mqtt-v311.workspace = true
+rcgen = "=0.14.5"
+rustls = { workspace = true, features = ["std"] }
+webpki-roots = "1.0.3"
+zeroize.workspace = true
+
+[lints]
+workspace = true

@@ -11,13 +11,18 @@ members = [
 default-members = [
     "crates/embedded-sdk",
     "crates/bluetooth",
+    "crates/cloud-azure-iot",
+    "crates/cloud-core",
     "crates/core",
     "crates/config",
     "crates/networking",
     "crates/networking-embassy-net",
     "crates/mqtt",
     "crates/mqtt-minimq",
+    "crates/mqtt-v311",
     "crates/runtime",
+    "crates/security",
+    "crates/tls-rustls",
     "crates/storage",
     "crates/telemetry",
     "crates/wifi",
@@ -35,13 +40,18 @@ repository = "https://github.com/patkepa/embedded-sdk-rs"
 [workspace.dependencies]
 embedded-sdk = { path = "crates/embedded-sdk" }
 embedded-sdk-bluetooth = { path = "crates/bluetooth" }
+embedded-sdk-cloud-azure-iot = { path = "crates/cloud-azure-iot" }
+embedded-sdk-cloud-core = { path = "crates/cloud-core" }
 embedded-sdk-core = { path = "crates/core" }
 embedded-sdk-config = { path = "crates/config" }
 embedded-sdk-networking = { path = "crates/networking" }
 embedded-sdk-networking-embassy-net = { path = "crates/networking-embassy-net" }
 embedded-sdk-mqtt = { path = "crates/mqtt" }
 embedded-sdk-mqtt-minimq = { path = "crates/mqtt-minimq" }
+embedded-sdk-mqtt-v311 = { path = "crates/mqtt-v311" }
 embedded-sdk-runtime = { path = "crates/runtime" }
+embedded-sdk-security = { path = "crates/security" }
+embedded-sdk-tls-rustls = { path = "crates/tls-rustls" }
 embedded-sdk-storage = { path = "crates/storage" }
 embedded-sdk-telemetry = { path = "crates/telemetry" }
 embedded-sdk-wifi = { path = "crates/wifi" }
@@ -62,6 +72,7 @@ embassy-time = "0.5.1"
 embedded-io-async = "0.7.0"
 embedded-storage = "0.3.1"
 embedded-storage-async = "0.4.1"
+base64ct = { version = "=1.8.3", default-features = false }
 esp-alloc = { version = "=0.10.0", default-features = false }
 esp-backtrace = "0.19.0"
 esp-bootloader-esp-idf = "0.5.0"
@@ -72,8 +83,18 @@ esp-rtos = { version = "=0.3.0", default-features = false }
 sequential-storage = { version = "=8.0.1", default-features = false }
 static_cell = "2.1.1"
 minimq = { version = "=0.13.0", default-features = false }
+pem-rfc7468 = { version = "=0.7.0", default-features = false, features = ["alloc"] }
+hmac = { version = "=0.13.0", default-features = false, features = ["zeroize"] }
+sha2 = { version = "=0.11.0", default-features = false, features = ["zeroize"] }
 trouble-host = { version = "=0.6.0", default-features = false }
 zeroize = { version = "=1.9.0", default-features = false }
+getrandom = { version = "=0.2.17", default-features = false, features = ["custom"] }
+rustls = { version = "=0.23.37", default-features = false, features = ["tls12"] }
+rustls-rustcrypto = { version = "=0.0.2-alpha", default-features = false, features = [
+    "alloc",
+    "tls12",
+    "zeroize",
+] }
 
 [workspace.lints.rust]
 missing_docs = "warn"

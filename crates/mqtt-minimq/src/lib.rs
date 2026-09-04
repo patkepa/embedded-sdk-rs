@@ -7,7 +7,7 @@ extern crate std;
 
 use core::fmt;
 
-use embedded_sdk_mqtt::{Config, ErrorKind, QoS, Snapshot, TopicFilter, TopicName};
+use embedded_sdk_mqtt::{Config, ErrorKind, QoS, SessionConfig, Snapshot, TopicFilter, TopicName};
 use minimq::{
     Buffers, ConfigBuilder, ConnectEvent, Io, PeerError, PubError, Publication, ResourceError,
     Session, SubscriptionOptions,
@@ -51,6 +51,8 @@ impl fmt::Debug for Credentials<'_> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum AdapterConfigError {
+    /// This adapter only supports MQTT 5 sessions.
+    ProtocolMismatch,
     /// RX and TX packet buffers must both be non-empty.
     EmptyBuffer,
     /// The RX buffer is smaller than the configured inbound packet limit.
@@ -71,6 +73,7 @@ pub enum AdapterConfigError {
 impl fmt::Display for AdapterConfigError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ProtocolMismatch => formatter.write_str("minimq adapter requires MQTT 5"),
             Self::EmptyBuffer => formatter.write_str("MQTT RX and TX buffers must not be empty"),
             Self::RxBufferTooSmall {
                 required,
@@ -187,6 +190,10 @@ impl<'buf> Client<'buf> {
         security: TransportSecurity,
         credentials: Option<Credentials<'buf>>,
     ) -> Result<Self, AdapterConfigError> {
+        let session_expiry_seconds = match config.session() {
+            SessionConfig::V5(session) => session.session_expiry_seconds(),
+            SessionConfig::V3_1_1(_) => return Err(AdapterConfigError::ProtocolMismatch),
+        };
         if rx.is_empty() || tx.is_empty() {
             return Err(AdapterConfigError::EmptyBuffer);
         }
@@ -204,7 +211,7 @@ impl<'buf> Client<'buf> {
         let mut builder = ConfigBuilder::new(Buffers::new(rx, tx))
             .client_id(config.client_id().as_str())?
             .keepalive_interval(config.keep_alive_seconds())
-            .session_expiry_interval(config.session_expiry_seconds());
+            .session_expiry_interval(session_expiry_seconds);
         if let Some(credentials) = credentials {
             builder = builder.auth(credentials.username, credentials.password)?;
         }
@@ -550,7 +557,7 @@ mod tests {
     }
 
     fn config(maximum_packet_size: u32) -> Config {
-        Config::new(
+        Config::new_v5(
             BrokerHostname::new("broker.example.test").unwrap(),
             BrokerPort::new(1883).unwrap(),
             ClientId::new("adapter-test").unwrap(),
@@ -559,6 +566,32 @@ mod tests {
             maximum_packet_size,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn rejects_mqtt_311_configuration() {
+        let config = Config::new_v311(
+            BrokerHostname::new("broker.example.test").unwrap(),
+            BrokerPort::new(1883).unwrap(),
+            ClientId::new("adapter-test").unwrap(),
+            30,
+            false,
+            64,
+        )
+        .unwrap();
+        let mut rx = [0; 64];
+        let mut tx = [0; 128];
+
+        assert!(matches!(
+            Client::new(
+                &config,
+                &mut rx,
+                &mut tx,
+                TransportSecurity::PlaintextFixture,
+                None,
+            ),
+            Err(AdapterConfigError::ProtocolMismatch)
+        ));
     }
 
     #[test]

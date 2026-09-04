@@ -2,20 +2,38 @@
 
 ## Implemented scope
 
-The workspace contains two MQTT packages:
+The workspace contains three MQTT packages:
 
 - `embedded-sdk-mqtt` provides bounded portable configuration, validated
   topic names and filters, QoS 0/1, lifecycle snapshots, normalized error
-  categories, and deterministic reconnect backoff.
+  categories, deterministic reconnect backoff, correlated live-session events,
+  and backend capability reporting for provider drivers.
 - `embedded-sdk-mqtt-minimq` provides MQTT 5 over a caller-supplied
   `embedded-io-async` byte stream using `minimq` 0.13 and caller-owned packet
   buffers.
+- `embedded-sdk-mqtt-v311` provides an experimental, allocation-free MQTT
+  3.1.1 subset over the same stream boundary for the Azure IoT work. It uses
+  caller-owned RX, TX, and single-operation replay buffers.
 
-The adapter supports fresh and resumed sessions, QoS 0/1 publish, subscribe,
-unsubscribe, receive, cooperative keepalive polling, graceful disconnect, and
-explicit capacity failures. Blocking protocol waits are cancellation-safe;
-the composing application must still apply transport deadlines and external
-wall-clock timeouts.
+The MQTT 5 adapter supports fresh and resumed sessions, QoS 0/1 publish,
+subscribe, unsubscribe, receive, cooperative keepalive polling, graceful
+disconnect, and explicit capacity failures. The MQTT 3.1.1 adapter supports
+CONNECT/CONNACK, QoS 0/1 PUBLISH/PUBACK, single-filter SUBSCRIBE/SUBACK,
+PINGREQ/PINGRESP, DISCONNECT, persistent sessions, QoS 1 reconnect replay,
+and explicit application-controlled acknowledgment of inbound QoS 1 messages.
+It implements the portable `MqttSession` contract, including correlated
+PUBLISH/SUBSCRIBE acknowledgments, retained-operation introspection, and manual
+inbound PUBACK. Provider drivers
+can reject a backend whose advertised behavior would weaken their delivery
+semantics; the Azure driver requires manual inbound acknowledgment for C2D
+and twin delivery. Azure direct-method requests are QoS 0, so a method-only
+session does not require a manual-ACK capability; its response still uses a
+correlated QoS 1 publication. If a bounded application queue rejects an
+inbound QoS 1 publication, the Azure session disconnects without PUBACK so a
+persistent broker session can redeliver it rather than recording false
+acceptance.
+Blocking protocol waits are cancellation-safe; the composing application must
+still apply transport deadlines and external wall-clock timeouts.
 
 QoS 2, topic aliases, request/reply services, multiple product subscriptions,
 provider topic layouts, and a persistent outbound queue are not exposed by
@@ -23,16 +41,21 @@ this first slice.
 
 ## Security status
 
-Secure MQTT is not yet supported. The reference firmware contains only a
-plaintext path for an isolated local fixture. It requires the explicit
-`MQTT_PLAINTEXT_FIXTURE=1` build input, rejects all MQTT credential inputs, and
-must not carry reusable credentials or sensitive payloads.
+An experimental server-authenticated TLS 1.2 stream now carries MQTT 3.1.1 in
+host tests, including Azure SAS credentials and QoS 1 telemetry. This is not
+yet live hardware or production support. The existing general reference
+firmware still contains only a plaintext path for an isolated local fixture.
+It requires the explicit `MQTT_PLAINTEXT_FIXTURE=1` build input, rejects all
+MQTT credential inputs, and must not carry reusable credentials or sensitive
+payloads. The separate Azure firmware compile-checks its hardware entropy and
+bounded MQTT 3.1.1 resources but stops before TLS authentication until trusted
+time, roots, and runtime credentials are available.
 
-The adapter accepts credentials only when composition declares an encrypted
-transport. Production firmware must not make that declaration until the
-stream verifies the broker hostname and a provisioned trust anchor. TLS clock,
-rotation, negative-certificate, and credential-provisioning work remains a
-support gate.
+Both adapters accept credentials only when composition declares an encrypted
+transport. Production firmware must not make that declaration until it
+composes the verified TLS stream with trusted time, reviewed trust anchors,
+and the platform RNG. Hardware execution, certificate rotation, resource
+measurement, and credential provisioning remain support gates.
 
 ## Reference firmware fixture
 
@@ -83,7 +106,8 @@ The reference firmware fixes these compile-time bounds:
 | Outbound application queue | 4 entries |
 | Entry payload ownership | borrowed static bytes |
 | Broker hostname | 253 bytes |
-| Client identifier | 64 bytes |
+| Portable client identifier | 128 bytes |
+| Current XIAO MQTT 5 adapter identifier | 64 bytes |
 | Topic/filter | 256 bytes |
 | Firmware subscriptions | 1 |
 | Exposed publish QoS | 0 and 1 |
@@ -110,18 +134,32 @@ not claimed from compile output.
 - A broker reconnect resumes the MQTT session when the broker retained it;
   otherwise firmware restores its one subscription.
 - In-flight QoS state survives transport reconnect only in live RAM.
+- A provider reattaching after reconnect must explicitly recover the retained
+  operation; silent attachment with replay state is rejected.
 - Heartbeat and BLE tasks never wait on the MQTT queue.
 
 ## Verification boundary
 
 Host tests cover configuration boundaries, facade isolation, error mapping,
-credential/plaintext rejection, reconnect behavior, lifecycle counters, and a
-fragmented async byte stream carrying CONNECT, QoS 1 publish, and inbound
-publish traffic. CI cross-compiles the XIAO firmware with the generic
-`embassy-net::TcpSocket` transport.
+credential/plaintext rejection, reconnect behavior, lifecycle counters,
+provider capability negotiation, and fragmented async byte streams carrying
+CONNECT, QoS 1 publish, and inbound publish traffic. A full in-process path
+also covers Azure configuration, SAS generation, TLS 1.2, MQTT 3.1.1 CONNECT,
+telemetry PUBLISH, and correlated PUBACK. The opt-in MQTT 3.1.1
+interoperability test also passes a
+QoS 1 round trip against Mosquitto 2.0.22:
 
-Broker interoperability, TLS verification, resource measurements, repeated
-hardware recovery, and BLE coexistence under MQTT load still require the
-controlled integration/HIL fixtures described in the local implementation
-plan. Until those pass, MQTT is a compile-tested plaintext fixture rather than
-a supported production capability.
+```sh
+MQTT_V311_BROKER_ADDR=127.0.0.1:18883 \
+  cargo test -p embedded-sdk-mqtt-v311 --test broker_interop -- --ignored
+```
+
+The caller must start an isolated plaintext broker at that address. The test
+never supplies credentials. CI cross-compiles the XIAO firmware with the
+generic `embassy-net::TcpSocket` transport.
+
+Hermetic CI broker orchestration, live-service TLS verification, resource
+measurements, repeated hardware recovery, and BLE coexistence under MQTT load still require
+the controlled integration/HIL fixtures described in the local implementation
+plan. Until those pass, MQTT is an experimental capability rather than a
+supported production transport.

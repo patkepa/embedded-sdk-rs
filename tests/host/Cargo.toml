@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-embedded-sdk.workspace = true
+embedded-sdk = { workspace = true, features = ["azure-iot"] }
 embedded-sdk-board-xiao-esp32c6.workspace = true
 
 [lints]

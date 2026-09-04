@@ -25,10 +25,17 @@ reference target. See the [Wi-Fi](docs/connectivity/wifi.md),
 [Bluetooth](docs/connectivity/bluetooth.md) guides for their current support
 boundaries.
 
-MQTT 5 has a portable bounded API, a `minimq` adapter, and an explicit
-plaintext local-fixture path in the XIAO firmware. It is not production support
-until the authenticated TLS and hardware validation gates pass. See the
-[MQTT guide](docs/connectivity/mqtt.md).
+MQTT has a portable, version-aware bounded API, a `minimq` MQTT 5 adapter, and
+an experimental allocation-free MQTT 3.1.1 adapter for the Azure work. The
+existing XIAO firmware's plaintext transport remains a local fixture; neither
+path is production support until the authenticated TLS and hardware validation
+gates pass. See the [MQTT guide](docs/connectivity/mqtt.md).
+
+The dedicated XIAO Azure IoT firmware now compile-checks public hub identity,
+hardware entropy registration, DNS resolution, fixed MQTT replay storage, and
+a bounded RAM telemetry queue. It intentionally stops before authentication
+until trusted time, trust roots, and a runtime credential source are composed.
+See its [firmware guide](firmware/seeed/xiao-esp32c6-azure-iot/README.md).
 
 A dedicated non-connectable iBeacon firmware is also available for the XIAO
 ESP32C6. See the [Beacon Guide](docs/connectivity/beacon.md) for deployment
@@ -38,8 +45,16 @@ The XIAO can also run as a dedicated BLE advertisement scanner that prints a
 rolling device list over its USB serial connection. See the
 [Beacon Scanner Guide](docs/connectivity/beacon-scanner.md).
 
-802.15.4/OpenThread, secure cloud connectivity, board-specific storage
-backends, and OTA remain planned.
+802.15.4/OpenThread, production cloud support, board-specific storage backends,
+and OTA remain planned. The Azure work now includes an experimental `no_std`,
+allocator-backed TLS 1.2 stream with caller-owned record buffers; it is not
+production support until its verification, resource, and live-service gates
+pass. The complete scope is documented in the
+[Azure IoT Hub Integration Plan](docs/plans/azure-iot-hub.md).
+
+Portable trusted-time, credential-lifetime, secure-random, and zeroizing
+secret contracts are available through the facade's `security` module. They
+are foundations rather than a claim of a production TLS or credential backend.
 
 Portable persistence is described in the [Storage Guide](docs/storage.md).
 
