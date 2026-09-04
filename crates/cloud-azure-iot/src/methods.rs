@@ -18,7 +18,7 @@ pub const MAX_METHOD_REQUEST_ID_LEN: usize =
     MAX_TOPIC_LEN - RESPONSE_PREFIX.len() - 5 - RESPONSE_SEPARATOR.len();
 
 /// Owned direct-method correlation identifier for crossing receive-buffer boundaries.
-#[derive(Clone, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct MethodRequestId {
     bytes: [u8; MAX_METHOD_REQUEST_ID_LEN],
     len: u16,

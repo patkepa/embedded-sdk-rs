@@ -212,6 +212,15 @@ pub enum HubSessionEvent<'a> {
     Progress,
 }
 
+/// Result of rejecting an inbound operation at a bounded application boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InboundRejection {
+    /// A QoS 0 operation was dropped locally; no broker acknowledgment exists.
+    Discarded,
+    /// The session disconnected without PUBACK so a QoS 1 message can be redelivered.
+    DisconnectedForRedelivery,
+}
+
 /// Failure while coordinating Azure provider state with a live MQTT session.
 #[derive(Debug)]
 #[non_exhaustive]
@@ -575,6 +584,33 @@ impl<'hub, S: MqttSession> HubSession<'hub, S> {
             return Err(self.observe_mqtt(error));
         }
         Ok(())
+    }
+
+    /// Rejects the last inbound operation because application capacity is exhausted.
+    ///
+    /// MQTT has no negative acknowledgment for an inbound QoS 1 PUBLISH. The
+    /// session therefore disconnects without PUBACK so a persistent broker
+    /// session can redeliver it later. QoS 0 direct methods cannot be
+    /// redelivered and are simply discarded; callers should publish an
+    /// overload method response while the request is still service-valid.
+    pub async fn reject_inbound_capacity(
+        &mut self,
+    ) -> Result<InboundRejection, HubSessionError<S::Error>> {
+        let pending = self
+            .pending_inbound
+            .take()
+            .ok_or(HubSessionError::NoInboundToAccept)?;
+        self.hub.queue_dropped();
+        if !pending.acknowledgement_required {
+            return Ok(InboundRejection::Discarded);
+        }
+        match self.mqtt.disconnect().await {
+            Ok(()) => {
+                self.hub.transition(ConnectionState::WaitingForNetwork);
+                Ok(InboundRejection::DisconnectedForRedelivery)
+            }
+            Err(error) => Err(self.observe_mqtt(error)),
+        }
     }
 
     /// Gracefully disconnects the composed MQTT session.
@@ -956,7 +992,10 @@ mod tests {
     };
 
     use super::*;
-    use crate::{DeviceId, HubHostname};
+    use crate::{
+        DIRECT_METHOD_OVERLOAD_STATUS, DIRECT_METHOD_TIMEOUT_STATUS, DeviceId,
+        DirectMethodDispatch, DirectMethodQueue, DirectMethodQueueError, HubHostname,
+    };
 
     fn block_on<F: Future>(future: F) -> F::Output {
         let mut context = Context::from_waker(Waker::noop());
@@ -1417,5 +1456,152 @@ mod tests {
             HubSession::new(&mut hub, mqtt, SessionDisposition::Fresh),
             Err(HubSessionError::UnsupportedBackend)
         ));
+    }
+
+    #[test]
+    fn async_session_rejects_method_overload_without_false_acceptance() {
+        let events = [
+            SessionEvent::Publish(embedded_sdk_mqtt::InboundPublish::new(
+                "$iothub/methods/POST/reboot/?$rid=ab12",
+                b"{}",
+                QoS::AtMostOnce,
+                false,
+                false,
+            )),
+            SessionEvent::Publish(embedded_sdk_mqtt::InboundPublish::new(
+                "$iothub/methods/POST/reboot/?$rid=cd34",
+                b"{}",
+                QoS::AtMostOnce,
+                false,
+                false,
+            )),
+        ];
+        let mut hub = HubClient::new(config(), HubCapabilities::DIRECT_METHODS);
+        let mqtt = MockSession::new(events);
+        let mut session = HubSession::new(&mut hub, mqtt, SessionDisposition::Resumed).unwrap();
+        let mut queue = DirectMethodQueue::<1, 16, 16>::new(5_000).unwrap();
+        let mut scratch = [0; 256];
+
+        let HubSessionEvent::Inbound(HubEvent::DirectMethod(first)) =
+            block_on(session.poll()).unwrap()
+        else {
+            panic!("expected first direct method");
+        };
+        queue.enqueue(first, 0).unwrap();
+        block_on(session.accept_inbound()).unwrap();
+        assert!(matches!(
+            queue.begin_next(0),
+            Some(DirectMethodDispatch::Ready(_))
+        ));
+
+        let HubSessionEvent::Inbound(HubEvent::DirectMethod(overload)) =
+            block_on(session.poll()).unwrap()
+        else {
+            panic!("expected overloaded direct method");
+        };
+        let overload_id = overload.owned_request_id().unwrap();
+        assert_eq!(
+            queue.enqueue(overload, 1),
+            Err(DirectMethodQueueError::Full)
+        );
+        assert_eq!(
+            block_on(session.reject_inbound_capacity()).unwrap(),
+            InboundRejection::Discarded
+        );
+        let operation = block_on(session.respond_direct_method(
+            &overload_id,
+            DIRECT_METHOD_OVERLOAD_STATUS,
+            br#"{"error":"busy"}"#,
+            &mut scratch,
+        ))
+        .unwrap();
+        assert_eq!(
+            block_on(session.poll()).unwrap(),
+            HubSessionEvent::OutboundAcknowledged {
+                operation,
+                purpose: OutboundOperation::DirectMethodResponse,
+            }
+        );
+
+        let (hub, mqtt) = session.into_parts();
+        assert_eq!(hub.snapshot().inbound_accepted, 1);
+        assert_eq!(hub.snapshot().queue_drops, 1);
+        assert!(!mqtt.disconnected);
+        assert_eq!(mqtt.publishes, 1);
+    }
+
+    #[test]
+    fn async_session_disconnects_to_reject_qos1_without_puback() {
+        let inbound = SessionEvent::Publish(embedded_sdk_mqtt::InboundPublish::new(
+            "devices/sensor-01/messages/devicebound/",
+            b"command",
+            QoS::AtLeastOnce,
+            false,
+            true,
+        ));
+        let mut hub = HubClient::new(config(), HubCapabilities::CLOUD_TO_DEVICE);
+        let mqtt = MockSession::new([inbound]);
+        let mut session = HubSession::new(&mut hub, mqtt, SessionDisposition::Resumed).unwrap();
+
+        assert!(matches!(
+            block_on(session.poll()).unwrap(),
+            HubSessionEvent::Inbound(HubEvent::CloudToDevice(_))
+        ));
+        assert_eq!(
+            block_on(session.reject_inbound_capacity()).unwrap(),
+            InboundRejection::DisconnectedForRedelivery
+        );
+
+        let (hub, mqtt) = session.into_parts();
+        assert_eq!(hub.snapshot().state, ConnectionState::WaitingForNetwork);
+        assert_eq!(hub.snapshot().inbound_accepted, 0);
+        assert_eq!(hub.snapshot().queue_drops, 1);
+        assert_eq!(mqtt.acknowledgements, 0);
+        assert!(mqtt.disconnected);
+    }
+
+    #[test]
+    fn async_session_correlates_expired_method_response_before_releasing_slot() {
+        let inbound = SessionEvent::Publish(embedded_sdk_mqtt::InboundPublish::new(
+            "$iothub/methods/POST/reboot/?$rid=ab12",
+            b"{}",
+            QoS::AtMostOnce,
+            false,
+            false,
+        ));
+        let mut hub = HubClient::new(config(), HubCapabilities::DIRECT_METHODS);
+        let mqtt = MockSession::new([inbound]);
+        let mut session = HubSession::new(&mut hub, mqtt, SessionDisposition::Resumed).unwrap();
+        let mut queue = DirectMethodQueue::<1, 16, 16>::new(100).unwrap();
+        let mut scratch = [0; 256];
+
+        let HubSessionEvent::Inbound(HubEvent::DirectMethod(request)) =
+            block_on(session.poll()).unwrap()
+        else {
+            panic!("expected direct method");
+        };
+        queue.enqueue(request, 1_000).unwrap();
+        block_on(session.accept_inbound()).unwrap();
+        let Some(DirectMethodDispatch::TimedOut(expired)) = queue.begin_next(1_100) else {
+            panic!("expected expired direct method");
+        };
+
+        let operation = block_on(session.respond_direct_method(
+            expired.request_id(),
+            DIRECT_METHOD_TIMEOUT_STATUS,
+            br#"{"error":"timeout"}"#,
+            &mut scratch,
+        ))
+        .unwrap();
+        assert_eq!(queue.len(), 1);
+        assert_eq!(
+            block_on(session.poll()).unwrap(),
+            HubSessionEvent::OutboundAcknowledged {
+                operation,
+                purpose: OutboundOperation::DirectMethodResponse,
+            }
+        );
+        queue.complete_active().unwrap();
+        assert!(queue.is_empty());
     }
 }

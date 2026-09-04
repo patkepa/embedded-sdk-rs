@@ -17,9 +17,11 @@
   contract and allocation-free Azure session coordinator now drive ordered
   subscription restoration, telemetry acknowledgments, twin resynchronization,
   reported-property correlation, direct-method responses with owned request
-  IDs, and delayed inbound PUBACK. Final firmware registration, entropy/HIL
-  and resource validation, bounded queues and method deadlines, protected
-  credential loading, firmware, and live IoT Hub gates remain open
+  IDs, a bounded method dispatcher with deadlines/overload responses, and
+  delayed inbound PUBACK or disconnect-for-redelivery rejection. Final
+  firmware registration, entropy/HIL and resource validation, C2D and
+  telemetry queues, protected credential loading, firmware, and live IoT Hub
+  gates remain open
 - Branch: `feat/cloud-iot-hub`
 - Initial target: Seeed Studio XIAO ESP32C6
 - Cloud service: Azure IoT Hub
@@ -37,7 +39,7 @@
 | Portable MQTT | Explicit MQTT 3.1.1/MQTT 5 configuration, separate session semantics, 128-byte client identities, a capability-reporting async `MqttSession` contract, and bounded MQTT 3.1.1 adapter with QoS 1 replay, correlated operation events, manual inbound ACK, Mosquitto interoperability, and authenticated MQTT-over-TLS composition | Hermetic CI broker gate and determine whether a safe subset can also be implemented by the MQTT 5 adapter |
 | Cloud core | Allocation-free capabilities, lifecycle/error domains, and health snapshot | Extend only from proven provider needs |
 | Azure identity | Bounded hub/device configuration, MQTT client ID, username, port, and persistent-session translation | Module identities and DPS identities |
-| Azure operations | Telemetry properties, C2D metadata, direct-method request parsing and QoS 1 response correlation with fixed-capacity owned request IDs, twin GET and reported-PATCH correlation, desired-version parsing, capability-gated inbound routing, four-filter fresh-session setup, reconnect full-twin synchronization, and an async session coordinator for subscription/PUBACK correlation and application-delayed inbound ACK | Bounded delivery queues, rejection/overload behavior, method response deadlines, skipped/stale desired-version policy, and application activation/reporting integration |
+| Azure operations | Telemetry properties, C2D metadata, direct-method request parsing and QoS 1 response correlation with fixed-capacity owned request IDs, a compile-time-bounded method FIFO with caller-clock deadlines and 429/504 handling, QoS 1 capacity rejection by disconnecting without PUBACK, twin GET and reported-PATCH correlation, desired-version parsing, capability-gated inbound routing, four-filter fresh-session setup, reconnect full-twin synchronization, and an async session coordinator | Bounded C2D and telemetry queues, product method-handler execution, skipped/stale desired-version policy, and application activation/reporting integration |
 | Authentication | Trusted-time contract, credential lease, zeroizing secret storage, secure-random contract, device-key base64 decoding, HMAC-SHA256 SAS token generation | Protected key source, production time provider, X.509 identity, rotation integration |
 | TLS transport | `no_std` rustls unbuffered stream with caller-owned record/plaintext buffers, explicit trust roots and time, DNS-name SNI/verification, TLS 1.2-only Azure RSA/AES-GCM policy, target compilation, an in-process fragmented TLS peer, MQTT 3.1.1 composition, host negative verification, and an opt-in ESP32-C6 RNG/getrandom bridge | Final-binary RNG registration and entropy validation, heap/stack measurements, HIL, X.509 client auth, and alpha-provider review |
 | Verification | Host unit/golden tests, fragmented-stream MQTT session tests, Mosquitto 2.0.22 MQTT 3.1.1 QoS 1 interoperability, TLS 1.2 success/SNI/encrypted-I/O, full Azure-config/SAS/TLS/MQTT/telemetry/PUBACK composition, async provider synchronization/acceptance tests, and host TLS trust/hostname/time/cipher/corruption/truncation rejection tests, strict linting of affected crates, bare-metal RISC-V compilation | Fuzzing, live IoT Hub, ESP32-C6 HIL, and resource measurements |
@@ -708,14 +710,18 @@ Method handler deadlines, concurrency, queue depth, and overload response must
 be compile-time-visible resource choices. A default of one in-flight method is
 appropriate for the first embedded slice.
 
-The current provider slice implements steps 1, 2, 5, 6, and MQTT PUBACK
-correlation for a single response. `MethodRequestId` copies the encoded `$rid`
-into fixed-capacity storage before the borrowed MQTT receive buffer is
-released. The application queue/handler still owns the method name, payload,
-deadline, and overload policy; those lifecycle mechanics remain a Phase 3
-gate. Azure delivers MQTT method requests at QoS 0, so their application
-acceptance boundary is observable but cannot be reinforced with a broker
-PUBACK.
+The current provider slice implements the bounded transport-independent parts
+of this flow. `MethodRequestId` copies the encoded `$rid` before the MQTT
+receive buffer is released. `DirectMethodQueue<DEPTH, METHOD_NAME, PAYLOAD>`
+copies the method name and payload into fixed storage, assigns a caller-clock
+deadline, preserves FIFO order, and retains an active slot until its owner
+records terminal completion. Queue overload is surfaced before false
+application acceptance and can be answered with the exported 429 status;
+expired work is classified for a correlated 504 response. The product still
+owns handler execution, authorization, response JSON, timer scheduling, and
+the final capacity choices. Azure delivers MQTT method requests at QoS 0, so
+their application acceptance boundary is observable but cannot be reinforced
+with a broker PUBACK.
 
 ## Device twin flow
 

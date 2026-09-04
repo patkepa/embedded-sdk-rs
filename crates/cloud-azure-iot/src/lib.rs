@@ -9,6 +9,7 @@ mod c2d;
 mod client;
 mod config;
 mod encode;
+mod method_queue;
 mod methods;
 mod properties;
 mod requests;
@@ -18,11 +19,16 @@ mod twin;
 pub use c2d::{CloudToDeviceMessage, parse_cloud_to_device};
 pub use client::{
     HubCapabilities, HubClient, HubError, HubEvent, HubSession, HubSessionError, HubSessionEvent,
-    OutboundOperation, SessionDisposition, Subscription, SubscriptionKind, TwinOperation,
+    InboundRejection, OutboundOperation, SessionDisposition, Subscription, SubscriptionKind,
+    TwinOperation,
 };
 pub use config::{
     ConfigError, DeviceId, HubConfig, HubHostname, IOT_HUB_API_VERSION, MAX_DEVICE_ID_LEN,
     MAX_KEEP_ALIVE_SECONDS, MQTT_TLS_PORT,
+};
+pub use method_queue::{
+    DIRECT_METHOD_OVERLOAD_STATUS, DIRECT_METHOD_TIMEOUT_STATUS, DirectMethodDispatch,
+    DirectMethodQueue, DirectMethodQueueError, MAX_METHOD_FIELD_CAPACITY, QueuedDirectMethod,
 };
 pub use methods::{
     DirectMethodRequest, MAX_METHOD_REQUEST_ID_LEN, MethodRequestId, direct_method_filter,

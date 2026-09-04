@@ -27,7 +27,10 @@ can reject a backend whose advertised behavior would weaken their delivery
 semantics; the Azure driver requires manual inbound acknowledgment for C2D
 and twin delivery. Azure direct-method requests are QoS 0, so a method-only
 session does not require a manual-ACK capability; its response still uses a
-correlated QoS 1 publication.
+correlated QoS 1 publication. If a bounded application queue rejects an
+inbound QoS 1 publication, the Azure session disconnects without PUBACK so a
+persistent broker session can redeliver it rather than recording false
+acceptance.
 Blocking protocol waits are cancellation-safe; the composing application must
 still apply transport deadlines and external wall-clock timeouts.
 
