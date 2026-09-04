@@ -47,7 +47,7 @@
 | Authentication | Trusted-time contract, monotonic anchored-clock enforcement, credential lease, zeroizing secret storage with an async-safe redacted borrow, secure-random contract, device-key base64 decoding, HMAC-SHA256 SAS token generation, an async runtime key-source/credential-provider boundary, primary/secondary key-slot selection, and safe provider-error formatting | Trusted snapshot acquisition/persistence, concrete protected key source, firmware refresh/reconnect execution, production time policy, X.509 identity |
 | TLS transport | `no_std` rustls unbuffered stream with caller-owned record/plaintext buffers, explicit trust roots and time, bounded PEM root decoding, DNS-name SNI/verification, TLS 1.2-only Azure RSA/AES-GCM policy, target compilation, an in-process fragmented TLS peer, MQTT 3.1.1 composition, host negative verification, an opt-in ESP32-C6 RNG/getrandom bridge, final-binary RNG registration, and a firmware-owned two-root IoT Hub bundle verified against Microsoft guidance | Trusted-time firmware composition, live handshake, independently updateable protected roots, entropy validation, full-path heap/stack measurements, HIL, X.509 client auth, and alpha-provider review |
 | Recovery | Failure-domain-specific next actions, bounded jittered reconnect delay, Azure retry-delay precedence, immediate primary/secondary SAS fallback, and stable-online backoff reset | Firmware timer/I/O execution, live fault injection, durable outage state |
-| Verification | Host unit/golden tests, fragmented-stream MQTT session tests, Mosquitto 2.0.22 MQTT 3.1.1 QoS 1 interoperability, TLS 1.2 success/SNI/encrypted-I/O, full Azure-config/SAS/TLS/MQTT/telemetry/PUBACK composition, async provider synchronization/acceptance tests, recovery-policy tests, and host TLS trust/hostname/time/cipher/corruption/truncation rejection tests, strict linting of affected crates, bare-metal RISC-V compilation, and CI compilation of the dedicated firmware | Fuzzing, live IoT Hub, ESP32-C6 HIL, and resource measurements |
+| Verification | Host unit/golden tests, fragmented-stream MQTT session tests, Mosquitto 2.0.22 MQTT 3.1.1 QoS 1 interoperability, TLS 1.2 success/SNI/encrypted-I/O, full Azure-config/SAS/TLS/MQTT/telemetry/PUBACK composition, async provider synchronization/acceptance tests, recovery-policy tests, host TLS trust/hostname/time/cipher/corruption/truncation rejection tests, an ignored opt-in live IoT Hub telemetry test, strict linting of affected crates, bare-metal RISC-V compilation, and CI compilation of the dedicated firmware | Executed live IoT Hub evidence, fuzzing, ESP32-C6 HIL, and full-path resource measurements |
 
 ## Executive recommendation
 
@@ -1050,6 +1050,14 @@ rejection of:
 
 Live tests are opt-in and use an isolated test hub and device identity. They
 must never run with production credentials in ordinary CI.
+
+The ignored `embedded-sdk-tls-rustls` `azure_iot_live` integration test is the
+first executable gate. It accepts only a hub hostname, device ID, and injected
+device key; generates a short-lived SAS token through the runtime provider;
+authenticates the endpoint with the firmware trust bundle; and requires the
+telemetry PUBACK before disconnecting. Its presence is not live-test evidence:
+record a dated successful execution separately before claiming Phase 2 live
+interoperability.
 
 Validate:
 

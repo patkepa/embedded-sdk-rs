@@ -22,6 +22,7 @@ embedded-sdk-mqtt-v311.workspace = true
 rcgen = "=0.14.5"
 rustls = { workspace = true, features = ["std"] }
 webpki-roots = "1.0.3"
+zeroize.workspace = true
 
 [lints]
 workspace = true
