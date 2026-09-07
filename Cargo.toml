@@ -13,6 +13,8 @@ default-members = [
     "crates/bluetooth",
     "crates/core",
     "crates/config",
+    "crates/display",
+    "crates/display-hub75",
     "crates/networking",
     "crates/networking-embassy-net",
     "crates/mqtt",
@@ -21,6 +23,7 @@ default-members = [
     "crates/storage",
     "crates/telemetry",
     "crates/wifi",
+    "ports/espressif/esp32",
     "tests/host",
     "tools/xtask",
 ]
@@ -37,6 +40,8 @@ embedded-sdk = { path = "crates/embedded-sdk" }
 embedded-sdk-bluetooth = { path = "crates/bluetooth" }
 embedded-sdk-core = { path = "crates/core" }
 embedded-sdk-config = { path = "crates/config" }
+embedded-sdk-display = { path = "crates/display" }
+embedded-sdk-display-hub75 = { path = "crates/display-hub75" }
 embedded-sdk-networking = { path = "crates/networking" }
 embedded-sdk-networking-embassy-net = { path = "crates/networking-embassy-net" }
 embedded-sdk-mqtt = { path = "crates/mqtt" }
@@ -45,6 +50,7 @@ embedded-sdk-runtime = { path = "crates/runtime" }
 embedded-sdk-storage = { path = "crates/storage" }
 embedded-sdk-telemetry = { path = "crates/telemetry" }
 embedded-sdk-wifi = { path = "crates/wifi" }
+embedded-sdk-platform-esp32 = { path = "ports/espressif/esp32", default-features = false }
 embedded-sdk-platform-esp32c6 = { path = "ports/espressif/esp32c6", default-features = false }
 embedded-sdk-board-xiao-esp32c6 = { path = "boards/seeed/xiao-esp32c6" }
 
@@ -69,6 +75,7 @@ esp-hal = { version = "=1.1.1", default-features = false }
 esp-println = "0.17.0"
 esp-radio = { version = "=0.18.0", default-features = false }
 esp-rtos = { version = "=0.3.0", default-features = false }
+esp-hub75 = { version = "=0.15.0", default-features = false }
 sequential-storage = { version = "=8.0.1", default-features = false }
 static_cell = "2.1.1"
 minimq = { version = "=0.13.0", default-features = false }

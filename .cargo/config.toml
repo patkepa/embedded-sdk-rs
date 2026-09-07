@@ -1,6 +1,15 @@
 [alias]
 xtask = "run -p xtask --"
 
+[target.xtensa-esp32-none-elf]
+runner = "espflash flash --monitor"
+rustflags = [
+    "-C",
+    "force-frame-pointers",
+    "-C",
+    "link-arg=-Tlinkall.x",
+]
+
 [target.riscv32imac-unknown-none-elf]
 runner = "espflash flash --monitor"
 rustflags = [

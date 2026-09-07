@@ -6,6 +6,13 @@ mod tests {
         bluetooth::{AdvertisingInterval, BeaconUuid, DeviceName, IBeacon, StaticRandomAddress},
         config::SchemaVersion,
         core::Capabilities,
+        display::{
+            Brightness, DisplaySize,
+            hub75::{
+                ChainOrder, ColorDepth, Config as Hub75Config, DriveMode, PanelGrid, PanelSpec,
+                ScanRate,
+            },
+        },
         mqtt::{
             BrokerHostname, BrokerPort, ClientId, Config as MqttConfig, TopicFilter, TopicName,
         },
@@ -101,5 +108,21 @@ mod tests {
         assert!(TopicName::new("devices/test/telemetry").is_ok());
         assert!(TopicFilter::new("devices/+/commands").is_ok());
         assert!(TopicName::new("devices/+/commands").is_err());
+    }
+
+    #[test]
+    fn facade_exposes_portable_hub75_configuration() {
+        let panel =
+            PanelSpec::new(DisplaySize::new(64, 32).unwrap(), ScanRate::ONE_SIXTEENTH).unwrap();
+        let grid = PanelGrid::new(panel, 2, 1, ChainOrder::Progressive).unwrap();
+        let config = Hub75Config::new(
+            grid,
+            ColorDepth::new(4).unwrap(),
+            DriveMode::Direct,
+            Brightness::from_percent(30).unwrap(),
+        );
+
+        assert_eq!(config.grid().canvas().width(), 128);
+        assert_eq!(config.color_depth().bitplanes(), 4);
     }
 }

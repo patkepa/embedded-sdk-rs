@@ -38,6 +38,12 @@ The XIAO can also run as a dedicated BLE advertisement scanner that prints a
 rolling device list over its USB serial connection. See the
 [Beacon Scanner Guide](docs/connectivity/beacon-scanner.md).
 
+Displays now have portable geometry and brightness types, validated HUB75
+panel/topology configuration, and an opt-in ESP32-WROOM I2S/DMA backend. See the
+[HUB75 Display Guide](docs/displays/hub75.md). A product board and firmware
+still own the connector pinout, framebuffer dimensions, memory allocation, and
+refresh policy.
+
 802.15.4/OpenThread, secure cloud connectivity, board-specific storage
 backends, and OTA remain planned.
 

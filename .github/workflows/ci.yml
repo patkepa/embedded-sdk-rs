@@ -32,3 +32,23 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: rustup target add $(cargo xtask targets)
       - run: cargo xtask build-all
+
+  esp32-hub75:
+    name: Original ESP32 HUB75 port
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Xtensa Rust toolchain
+        uses: esp-rs/xtensa-toolchain@v1.7.0
+        with:
+          buildtargets: esp32
+          version: "1.96.0.0"
+      - uses: Swatinem/rust-cache@v2
+      - run: >-
+          cargo +esp check
+          -p embedded-sdk-platform-esp32
+          --target xtensa-esp32-none-elf
+          --no-default-features
+          --features hub75

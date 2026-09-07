@@ -1,0 +1,11 @@
+[package]
+name = "embedded-sdk-display"
+description = "Portable display geometry, brightness, and presentation contracts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true

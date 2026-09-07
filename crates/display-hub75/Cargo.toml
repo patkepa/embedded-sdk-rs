@@ -1,0 +1,14 @@
+[package]
+name = "embedded-sdk-display-hub75"
+description = "Portable HUB75 panel, scan, wiring, and topology configuration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+embedded-sdk-display.workspace = true
+
+[lints]
+workspace = true

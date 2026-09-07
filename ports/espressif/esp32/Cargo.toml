@@ -1,0 +1,23 @@
+[package]
+name = "embedded-sdk-platform-esp32"
+description = "Original Xtensa ESP32 platform integration for embedded-sdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+hub75 = ["dep:embedded-sdk-display-hub75", "dep:esp-hub75"]
+
+[dependencies]
+embedded-sdk-core.workspace = true
+embedded-sdk-display-hub75 = { workspace = true, optional = true }
+
+[target.'cfg(target_arch = "xtensa")'.dependencies]
+esp-hal = { workspace = true, features = ["esp32", "requires-unstable"] }
+esp-hub75 = { workspace = true, features = ["esp32", "esp-hal-unstable"], optional = true }
+
+[lints]
+workspace = true

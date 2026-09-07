@@ -8,6 +8,12 @@ pub use embedded_sdk_bluetooth as bluetooth;
 pub use embedded_sdk_config as config;
 /// Hardware identity and capability types.
 pub use embedded_sdk_core as core;
+/// Portable display contracts and protocol-specific display configuration.
+pub mod display {
+    pub use embedded_sdk_display::*;
+    /// Portable HUB75 RGB matrix configuration.
+    pub use embedded_sdk_display_hub75 as hub75;
+}
 /// Portable MQTT configuration and lifecycle contracts.
 pub use embedded_sdk_mqtt as mqtt;
 /// Portable link and IP configuration state.

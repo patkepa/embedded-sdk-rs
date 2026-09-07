@@ -174,6 +174,13 @@ results without depending on an MCU or board. The ESP32-C6 packet interface is
 owned by the `embassy-net` runner while firmware independently supervises the
 radio controller.
 
+The first display slice follows the same incremental approach. Flat
+`crates/display` and `crates/display-hub75` packages own portable display and
+HUB75 configuration, while `ports/espressif/esp32` owns the original Xtensa
+ESP32 I2S-parallel/DMA backend. Board pinouts and static framebuffer allocation
+remain outside those portable crates. See
+[ADR 0004](../adr/0004-display-and-hub75-boundaries.md).
+
 ## Dependency Architecture
 
 Dependencies must point inward toward portable abstractions:
