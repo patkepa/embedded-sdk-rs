@@ -9,6 +9,10 @@ use embedded_sdk_platform_esp32c6 as platform;
 mod battery;
 #[cfg(target_arch = "riscv32")]
 pub use battery::{BatteryMonitorError, BeetleBatteryMonitor};
+#[cfg(target_arch = "riscv32")]
+mod led;
+#[cfg(target_arch = "riscv32")]
+pub use led::BeetleStatusLed;
 
 /// Stable board support type for the DFRobot Beetle ESP32-C6.
 pub struct BeetleEsp32c6;
@@ -34,6 +38,8 @@ pub const BATTERY_DIVIDER_NUMERATOR: u32 = 2;
 pub const BATTERY_DIVIDER_DENOMINATOR: u32 = 1;
 /// Number of calibrated ADC readings averaged into one battery measurement.
 pub const BATTERY_SAMPLE_COUNT: usize = 8;
+/// GPIO15, wired active-high to the on-board blue status LED.
+pub const USER_LED_GPIO: u8 = 15;
 
 #[cfg(test)]
 mod tests {
@@ -41,6 +47,7 @@ mod tests {
 
     use super::{
         BATTERY_DIVIDER_DENOMINATOR, BATTERY_DIVIDER_NUMERATOR, BATTERY_SENSE_GPIO, HARDWARE,
+        USER_LED_GPIO,
     };
 
     #[test]
@@ -61,5 +68,6 @@ mod tests {
             (BATTERY_DIVIDER_NUMERATOR, BATTERY_DIVIDER_DENOMINATOR),
             (2, 1)
         );
+        assert_eq!(USER_LED_GPIO, 15);
     }
 }

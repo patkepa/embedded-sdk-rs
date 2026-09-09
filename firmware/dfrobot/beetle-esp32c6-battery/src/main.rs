@@ -4,12 +4,15 @@
 
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
-use embedded_sdk_board_beetle_esp32c6::{BeetleBatteryMonitor, HARDWARE};
+use embedded_sdk_board_beetle_esp32c6::{BeetleBatteryMonitor, BeetleStatusLed, HARDWARE};
 use embedded_sdk_platform_esp32c6::start_embassy;
 use embedded_sdk_power::{BatteryMonitor, VoltageCurve, VoltagePoint};
 use esp_backtrace as _;
 
 const BATTERY_REPORT_INTERVAL: Duration = Duration::from_secs(30);
+const LED_SHORT_PULSE: Duration = Duration::from_millis(100);
+const LED_PULSE_GAP: Duration = Duration::from_millis(150);
+const LED_CRITICAL_PULSE: Duration = Duration::from_millis(800);
 
 // An intentionally generic single-cell Li-ion/LiPo profile. Products should
 // replace it with points characterized for their cell, load, and temperature.
@@ -36,6 +39,7 @@ async fn main(_spawner: Spawner) {
     start_embassy(peripherals.TIMG0, peripherals.SW_INTERRUPT);
 
     let mut battery = BeetleBatteryMonitor::new(peripherals.ADC1, peripherals.GPIO0);
+    let mut status_led = BeetleStatusLed::new(peripherals.GPIO15);
     let profile = VoltageCurve::new(&BATTERY_PROFILE_POINTS)
         .expect("the static Beetle battery profile must be valid");
 
@@ -58,10 +62,37 @@ async fn main(_spawner: Spawner) {
                     estimate.percentage().get(),
                     measurement.charge_state()
                 );
+                show_battery_status(&mut status_led, estimate.percentage().get()).await;
             }
             Err(error) => esp_println::println!("battery measurement failed: {error}"),
         }
 
         Timer::after(BATTERY_REPORT_INTERVAL).await;
+    }
+}
+
+async fn show_battery_status(status_led: &mut BeetleStatusLed<'_>, percentage: u8) {
+    if percentage < 10 {
+        status_led.on();
+        Timer::after(LED_CRITICAL_PULSE).await;
+        status_led.off();
+        return;
+    }
+
+    let pulse_count = match percentage {
+        10..=24 => 1,
+        25..=49 => 2,
+        50..=74 => 3,
+        _ => 4,
+    };
+
+    for pulse in 0..pulse_count {
+        status_led.on();
+        Timer::after(LED_SHORT_PULSE).await;
+        status_led.off();
+
+        if pulse + 1 < pulse_count {
+            Timer::after(LED_PULSE_GAP).await;
+        }
     }
 }

@@ -15,6 +15,7 @@ The implementation supports:
 - One discarded settling conversion followed by an eight-sample average.
 - A product-owned piecewise-linear state-of-charge estimate.
 - Serial reporting every 30 seconds.
+- Low-power battery-status reporting on the on-board blue LED after each sample.
 
 It does not support charging-state detection, battery-presence detection,
 current measurement, state of health, or time-to-empty calculation. The TP4057
@@ -47,6 +48,12 @@ embedded-sdk boot: board=beetle-esp32c6, chip=esp32c6
 battery state-of-charge is a terminal-voltage estimate; charge status is unavailable
 battery: voltage_mv=3870, estimated_percent=60, charge_state=Unknown
 ```
+
+The blue GPIO15 LED reports the estimate after every sample: one short pulse at
+10--24 percent, two at 25--49 percent, three at 50--74 percent, and four at
+75--100 percent. A single 800 ms pulse warns that the estimate is below 10
+percent. The separate green charge LED is controlled directly by the TP4057 and
+is not software-controlled.
 
 The firmware profile is intentionally generic. Replace
 `BATTERY_PROFILE_POINTS` with characterization data for the selected single-cell
