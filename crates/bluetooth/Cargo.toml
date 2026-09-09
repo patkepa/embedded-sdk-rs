@@ -7,5 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[dependencies]
+# no_std exponentiation for the RSSI path-loss model.
+libm = { version = "0.2.16", default-features = false }
+
 [lints]
 workspace = true

@@ -4,10 +4,12 @@
 
 use core::{cell::RefCell, fmt, fmt::Write as _, str};
 
+use bt_hci::cmd::le::LeSetScanEnable;
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
 use embassy_sync::blocking_mutex::{Mutex, raw::NoopRawMutex};
 use embassy_time::{Duration, Instant, Timer};
+use embedded_sdk_bluetooth::distance::DistanceEstimator;
 use embedded_sdk_board_xiao_esp32c6::HARDWARE;
 use embedded_sdk_platform_esp32c6::{
     bluetooth::{BluetoothConnector, ControllerConfig, Esp32c6Bluetooth, static_random_address},
@@ -18,7 +20,7 @@ use esp_hal::gpio::{Level, Output, OutputConfig};
 use trouble_host::advertise::AdStructure;
 use trouble_host::prelude::*;
 
-const SCAN_WINDOW: Duration = Duration::from_secs(5);
+const SCAN_WINDOW: Duration = Duration::from_secs(1);
 const SCAN_INTERVAL: Duration = Duration::from_millis(100);
 const DEVICE_STALE_AFTER_MS: u64 = 15_000;
 const DEVICE_CAPACITY: usize = 128;
@@ -64,6 +66,9 @@ async fn main(_spawner: Spawner) {
         REMEMBERED_DEVICE_CAPACITY,
         SNAPSHOT_DISPLAY_LIMIT
     );
+    esp_println::println!(
+        "Distance: ESTm is approximate (-59 dBm at 1 m, n=2); '-' means warming up, stale, or not a recognized beacon"
+    );
 
     let controller_config = ControllerConfig::default().with_max_connections(1);
     match Esp32c6Bluetooth::new_with_config(peripherals.BT, controller_config) {
@@ -105,10 +110,24 @@ async fn scanner_task(connector: BluetoothConnector<'static>) {
         loop {
             match scanner.scan(&config).await {
                 Ok(session) => {
-                    esp_println::println!("Scanning for {}s...", SCAN_WINDOW.as_secs());
-                    Timer::after(SCAN_WINDOW).await;
-                    drop(session);
-                    reports.print_snapshot(Instant::now().as_millis());
+                    // trouble-host 0.6 enables duplicate filtering in scan().
+                    // Reconfigure through the host so repeated advertisements
+                    // reach the estimator without modifying the dependency.
+                    if stack
+                        .command(LeSetScanEnable::new(true, false))
+                        .await
+                        .is_err()
+                    {
+                        esp_println::println!("Could not disable duplicate filtering; retrying");
+                        drop(session);
+                        Timer::after(Duration::from_secs(1)).await;
+                        continue;
+                    }
+                    let _session = session;
+                    loop {
+                        Timer::after(SCAN_WINDOW).await;
+                        reports.print_snapshot(Instant::now().as_millis());
+                    }
                 }
                 Err(_) => {
                     esp_println::println!(
@@ -146,6 +165,9 @@ impl ScanReportHandler {
     }
 
     fn record(&self, address: Address, rssi: i8, data: &[u8]) {
+        if !(-127..=20).contains(&rssi) {
+            return;
+        }
         let metadata = AdvertisementMetadata::parse(data);
         let now_ms = Instant::now().as_millis();
         self.registry.lock(|registry| {
@@ -225,7 +247,7 @@ impl ScanReportHandler {
             shown
         );
         esp_println::println!(
-            "  AVG DELTA  MAX AGEms PKTS KIND ADDRESS             MFG    BEACON NAME"
+            "  AVG DELTA  MAX AGEms PKTS ESTm     KIND ADDRESS             MFG    BEACON NAME"
         );
         for entry in snapshot
             .entries
@@ -236,7 +258,7 @@ impl ScanReportHandler {
         {
             let average = entry.window_average().unwrap_or(i16::MIN);
             esp_println::println!(
-                "{:<5} {} {:<4} {:<5} {:<4} {}  {} {} {} {}",
+                "{:<5} {} {:<4} {:<5} {:<4} {} {}  {} {} {} {}",
                 average,
                 RssiDelta(
                     entry
@@ -246,6 +268,7 @@ impl ScanReportHandler {
                 entry.window_peak_rssi,
                 now_ms.saturating_sub(entry.last_seen_ms),
                 entry.window_reports,
+                EstimatedDistance(entry.distance.meters(now_ms)),
                 AddressKind(entry.address.kind),
                 entry.address,
                 Manufacturer(entry.manufacturer),
@@ -265,7 +288,7 @@ impl ScanReportHandler {
                 beacon_count,
                 beacon_count.min(BEACON_DISPLAY_LIMIT)
             );
-            esp_println::println!("  AVG DELTA ADDRESS             MFG    BEACON NAME");
+            esp_println::println!("  AVG DELTA ESTm     ADDRESS             MFG    BEACON NAME");
             for entry in snapshot
                 .entries
                 .iter()
@@ -275,13 +298,14 @@ impl ScanReportHandler {
             {
                 let average = entry.window_average().unwrap_or(i16::MIN);
                 esp_println::println!(
-                    "{:<5} {} {} {} {} {}",
+                    "{:<5} {} {} {} {} {} {}",
                     average,
                     RssiDelta(
                         entry
                             .previous_window_average
                             .map(|previous| average - previous)
                     ),
+                    EstimatedDistance(entry.distance.meters(now_ms)),
                     entry.address,
                     Manufacturer(entry.manufacturer),
                     BeaconLabel(entry.beacon),
@@ -384,6 +408,11 @@ impl DeviceRegistry {
                 entry.manufacturer = metadata.manufacturer;
             }
             entry.beacon.merge(metadata.beacon);
+            // Only beacon-bearing advertisements contribute to ranging;
+            // name-only scan responses must not weight the estimate twice.
+            if metadata.beacon.is_beacon() {
+                entry.distance.record(rssi, now_ms);
+            }
             return;
         }
 
@@ -401,7 +430,12 @@ impl DeviceRegistry {
                 self.window_evictions = self.window_evictions.wrapping_add(1);
                 oldest
             });
+        let mut distance = DistanceEstimator::new();
+        if metadata.beacon.is_beacon() {
+            distance.record(rssi, now_ms);
+        }
         self.entries[index] = Some(DeviceEntry {
+            distance,
             address,
             previous_window_average: None,
             window_rssi_sum: i32::from(rssi),
@@ -427,6 +461,7 @@ impl DeviceRegistry {
 
 #[derive(Clone, Copy)]
 struct DeviceEntry {
+    distance: DistanceEstimator,
     address: Address,
     previous_window_average: Option<i16>,
     window_rssi_sum: i32,
@@ -588,6 +623,18 @@ impl LocalName {
 }
 
 struct AddressKind(AddrKind);
+
+struct EstimatedDistance(Option<f32>);
+
+impl fmt::Display for EstimatedDistance {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Some(meters) if meters < 0.1 => formatter.write_str("<0.1    "),
+            Some(meters) => write!(formatter, "{:<8.1}", meters),
+            None => formatter.write_str("-       "),
+        }
+    }
+}
 
 struct RssiDelta(Option<i16>);
 

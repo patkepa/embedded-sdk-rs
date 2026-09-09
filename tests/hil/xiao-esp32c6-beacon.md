@@ -43,6 +43,26 @@ firmware commit, and build-time beacon settings with the results.
    approach boundary at least 100 times and record first-report latency.
 5. Report median, p95, p99, and maximum latency, along with missed approaches.
 
+## Scanner distance output
+
+1. Flash `xiao-esp32c6/beacon-scanner` on a second board and read its USB serial
+   output. Confirm the startup model is -59 dBm at 1 m with n=2, and snapshots
+   arrive approximately once per second without duplicate-filter setup errors.
+2. With the default 20 ms beacon nearby, confirm repeated packets arrive in
+   successive snapshots and `ESTm` appears after five valid beacon samples.
+   Confirm the local name still appears through active scanning.
+3. Record at least 30 seconds at measured 1, 2, 5, and 10 m distances. Record
+   estimate median, absolute error, variation, packet counts, and antenna
+   orientation. The fixed reference is an assumption; do not expect an exact
+   one-metre reading without calibration.
+4. Move the beacon closer and farther away. Verify estimates settle in the
+   expected direction and record response lag. Repeat with body obstruction.
+5. Switch off the beacon. Confirm lost notices do not retain a distance. After
+   more than two seconds, switch it on again and verify fresh sample warm-up.
+6. Verify multiple beacons have independent estimates; generic advertisers
+   show `-`. Run a crowded-radio soak and check for dropped reports, stalled
+   output, or resets while the serial terminal is connected.
+
 ## RF and power
 
 1. Repeat range and packet-reception measurements for each intended TX power,

@@ -4,6 +4,8 @@
 
 use core::{fmt, str};
 
+pub mod distance;
+
 /// Maximum device-name length supported by the SDK's legacy GAP profile.
 ///
 /// The bound leaves room in a 31-byte legacy advertising packet for the
