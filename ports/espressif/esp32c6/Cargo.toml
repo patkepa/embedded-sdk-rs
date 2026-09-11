@@ -11,12 +11,15 @@ repository.workspace = true
 default = ["bluetooth", "coex", "wifi"]
 bluetooth = ["dep:embedded-sdk-bluetooth", "esp-radio/ble"]
 coex = ["bluetooth", "esp-radio/coex", "wifi"]
+hardware-rng = ["dep:embedded-sdk-security", "dep:getrandom"]
 wifi = ["dep:embedded-sdk-wifi", "esp-radio/wifi"]
 
 [dependencies]
 embedded-sdk-bluetooth = { workspace = true, optional = true }
 embedded-sdk-core.workspace = true
+embedded-sdk-security = { workspace = true, optional = true }
 embedded-sdk-wifi = { workspace = true, optional = true }
+getrandom = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 esp-hal = { workspace = true, features = ["esp32c6", "requires-unstable"] }

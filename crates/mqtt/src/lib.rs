@@ -6,8 +6,12 @@ use core::{fmt, str};
 
 /// Maximum broker hostname length accepted by the SDK.
 pub const MAX_HOSTNAME_LEN: usize = 253;
-/// Maximum MQTT client identifier length accepted by the SDK.
-pub const MAX_CLIENT_ID_LEN: usize = 64;
+/// Maximum MQTT client identifier length accepted by the portable SDK.
+///
+/// Concrete adapters may impose a smaller limit and must reject identifiers
+/// they cannot encode. The portable bound accommodates cloud identities such
+/// as Azure IoT Hub device identifiers.
+pub const MAX_CLIENT_ID_LEN: usize = 128;
 /// Maximum topic or topic-filter length accepted by the SDK.
 pub const MAX_TOPIC_LEN: usize = 256;
 /// Largest MQTT packet this first SDK slice supports.
@@ -228,6 +232,264 @@ pub enum QoS {
     AtLeastOnce,
 }
 
+/// Non-zero MQTT packet identifier used to correlate acknowledged operations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OperationId(u16);
+
+impl OperationId {
+    /// Smallest valid MQTT packet identifier.
+    pub const MIN: Self = Self(1);
+
+    /// Creates an identifier, rejecting MQTT's reserved zero value.
+    #[must_use]
+    pub const fn new(value: u16) -> Option<Self> {
+        if value == 0 { None } else { Some(Self(value)) }
+    }
+
+    /// Returns the MQTT packet identifier.
+    #[must_use]
+    pub const fn get(self) -> u16 {
+        self.0
+    }
+}
+
+/// Borrowed inbound MQTT publication valid until the next session operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InboundPublish<'a> {
+    topic: &'a str,
+    payload: &'a [u8],
+    qos: QoS,
+    retained: bool,
+    acknowledgement_required: bool,
+}
+
+impl<'a> InboundPublish<'a> {
+    /// Creates a publication decoded and validated by a concrete backend.
+    #[must_use]
+    pub const fn new(
+        topic: &'a str,
+        payload: &'a [u8],
+        qos: QoS,
+        retained: bool,
+        acknowledgement_required: bool,
+    ) -> Self {
+        Self {
+            topic,
+            payload,
+            qos,
+            retained,
+            acknowledgement_required,
+        }
+    }
+
+    /// Returns the broker-provided topic name.
+    #[must_use]
+    pub const fn topic(self) -> &'a str {
+        self.topic
+    }
+
+    /// Returns the application payload.
+    #[must_use]
+    pub const fn payload(self) -> &'a [u8] {
+        self.payload
+    }
+
+    /// Returns the delivery quality of service.
+    #[must_use]
+    pub const fn qos(self) -> QoS {
+        self.qos
+    }
+
+    /// Returns whether the broker marked the publication retained.
+    #[must_use]
+    pub const fn retained(self) -> bool {
+        self.retained
+    }
+
+    /// Returns whether acceptance must be followed by an explicit PUBACK.
+    #[must_use]
+    pub const fn acknowledgement_required(self) -> bool {
+        self.acknowledgement_required
+    }
+}
+
+/// Backend-independent event produced while driving a live MQTT session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionEvent<'a> {
+    /// An inbound publication awaits application handling and possibly ACK.
+    Publish(InboundPublish<'a>),
+    /// A QoS 1 outbound publication was acknowledged by the broker.
+    Published(OperationId),
+    /// A subscription was accepted at the supplied QoS.
+    Subscribed {
+        /// Correlates the original subscribe operation.
+        operation: OperationId,
+        /// QoS granted by the broker.
+        granted_qos: QoS,
+    },
+    /// Keepalive or another internal control exchange made progress.
+    Progress,
+}
+
+/// Operation retained by a backend across a transport reconnect.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionPendingOperation {
+    /// An outbound QoS 1 publication is being replayed until PUBACK.
+    Publish(OperationId),
+    /// A subscription request is being replayed until SUBACK.
+    Subscribe(OperationId),
+}
+
+/// Behavioral capabilities of a concrete live MQTT session.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SessionCapabilities(u8);
+
+impl SessionCapabilities {
+    /// The application controls when an inbound QoS 1 PUBACK is sent.
+    pub const MANUAL_INBOUND_ACK: Self = Self(1 << 0);
+    /// QoS 1 PUBACK is surfaced with a correlating operation identifier.
+    pub const CORRELATED_PUBLISH_ACK: Self = Self(1 << 1);
+    /// SUBACK is surfaced with a correlating operation identifier and QoS.
+    pub const CORRELATED_SUBSCRIPTION_ACK: Self = Self(1 << 2);
+
+    /// Creates an empty capability set.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self(0)
+    }
+
+    /// Returns the union of two capability sets.
+    #[must_use]
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    /// Returns whether every requested capability is implemented.
+    #[must_use]
+    pub const fn contains(self, requested: Self) -> bool {
+        self.0 & requested.0 == requested.0
+    }
+}
+
+/// Narrow asynchronous contract required by cloud-provider session drivers.
+///
+/// Implementations retain all packet storage and backend-specific state. An
+/// inbound event borrows that storage until the caller finishes processing it.
+/// This contract deliberately does not model MQTT-version-specific session
+/// configuration or connection establishment.
+#[allow(
+    async_fn_in_trait,
+    reason = "embedded providers are statically dispatched and do not require dyn compatibility"
+)]
+pub trait MqttSession {
+    /// Concrete backend failure retaining diagnostics below [`ErrorKind`].
+    type Error;
+
+    /// Reports acknowledgment behavior required by provider drivers.
+    fn capabilities(&self) -> SessionCapabilities;
+
+    /// Returns the operation replayed from the previous transport, if any.
+    fn pending_operation(&self) -> Option<SessionPendingOperation>;
+
+    /// Returns the stable category for a concrete failure.
+    fn classify_error(error: &Self::Error) -> ErrorKind;
+
+    /// Starts one subscription operation.
+    async fn subscribe(
+        &mut self,
+        filter: &TopicFilter,
+        qos: QoS,
+    ) -> Result<OperationId, Self::Error>;
+
+    /// Starts an outbound publication.
+    async fn publish(
+        &mut self,
+        topic: &TopicName,
+        payload: &[u8],
+        qos: QoS,
+    ) -> Result<Option<OperationId>, Self::Error>;
+
+    /// Waits for one inbound or acknowledgment event.
+    async fn poll(&mut self) -> Result<SessionEvent<'_>, Self::Error>;
+
+    /// Acknowledges the last delivered inbound QoS 1 publication.
+    async fn acknowledge_received(&mut self) -> Result<(), Self::Error>;
+
+    /// Sends a graceful MQTT disconnect.
+    async fn disconnect(&mut self) -> Result<(), Self::Error>;
+}
+
+/// MQTT wire protocol selected for a session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProtocolVersion {
+    /// MQTT version 3.1.1.
+    V3_1_1,
+    /// MQTT version 5.0.
+    V5,
+}
+
+/// MQTT 3.1.1 session behavior.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct V311SessionConfig {
+    clean_session: bool,
+}
+
+impl V311SessionConfig {
+    /// Creates MQTT 3.1.1 session behavior.
+    #[must_use]
+    pub const fn new(clean_session: bool) -> Self {
+        Self { clean_session }
+    }
+
+    /// Returns whether the broker should discard session state on disconnect.
+    #[must_use]
+    pub const fn clean_session(self) -> bool {
+        self.clean_session
+    }
+}
+
+/// MQTT 5 session behavior.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct V5SessionConfig {
+    session_expiry_seconds: u32,
+}
+
+impl V5SessionConfig {
+    /// Creates MQTT 5 session behavior with an explicit expiry interval.
+    #[must_use]
+    pub const fn new(session_expiry_seconds: u32) -> Self {
+        Self {
+            session_expiry_seconds,
+        }
+    }
+
+    /// Returns the requested broker session expiry interval.
+    #[must_use]
+    pub const fn session_expiry_seconds(self) -> u32 {
+        self.session_expiry_seconds
+    }
+}
+
+/// Version-specific MQTT session behavior.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionConfig {
+    /// MQTT 3.1.1 session options.
+    V3_1_1(V311SessionConfig),
+    /// MQTT 5 session options.
+    V5(V5SessionConfig),
+}
+
+impl SessionConfig {
+    /// Returns the selected MQTT wire version.
+    #[must_use]
+    pub const fn protocol_version(self) -> ProtocolVersion {
+        match self {
+            Self::V3_1_1(_) => ProtocolVersion::V3_1_1,
+            Self::V5(_) => ProtocolVersion::V5,
+        }
+    }
+}
+
 /// Validated portable MQTT session configuration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Config {
@@ -235,18 +497,55 @@ pub struct Config {
     port: BrokerPort,
     client_id: ClientId,
     keep_alive_seconds: u16,
-    session_expiry_seconds: u32,
+    session: SessionConfig,
     maximum_packet_size: u32,
 }
 
 impl Config {
-    /// Creates a configuration with explicit resource and session limits.
-    pub const fn new(
+    /// Creates an MQTT 3.1.1 configuration with explicit resource limits.
+    pub const fn new_v311(
+        hostname: BrokerHostname,
+        port: BrokerPort,
+        client_id: ClientId,
+        keep_alive_seconds: u16,
+        clean_session: bool,
+        maximum_packet_size: u32,
+    ) -> Result<Self, ConfigError> {
+        Self::new_inner(
+            hostname,
+            port,
+            client_id,
+            keep_alive_seconds,
+            SessionConfig::V3_1_1(V311SessionConfig::new(clean_session)),
+            maximum_packet_size,
+        )
+    }
+
+    /// Creates an MQTT 5 configuration with explicit resource and session limits.
+    pub const fn new_v5(
         hostname: BrokerHostname,
         port: BrokerPort,
         client_id: ClientId,
         keep_alive_seconds: u16,
         session_expiry_seconds: u32,
+        maximum_packet_size: u32,
+    ) -> Result<Self, ConfigError> {
+        Self::new_inner(
+            hostname,
+            port,
+            client_id,
+            keep_alive_seconds,
+            SessionConfig::V5(V5SessionConfig::new(session_expiry_seconds)),
+            maximum_packet_size,
+        )
+    }
+
+    const fn new_inner(
+        hostname: BrokerHostname,
+        port: BrokerPort,
+        client_id: ClientId,
+        keep_alive_seconds: u16,
+        session: SessionConfig,
         maximum_packet_size: u32,
     ) -> Result<Self, ConfigError> {
         if maximum_packet_size == 0 || maximum_packet_size > MAX_PACKET_SIZE {
@@ -257,7 +556,7 @@ impl Config {
             port,
             client_id,
             keep_alive_seconds,
-            session_expiry_seconds,
+            session,
             maximum_packet_size,
         })
     }
@@ -278,9 +577,13 @@ impl Config {
     pub const fn keep_alive_seconds(&self) -> u16 {
         self.keep_alive_seconds
     }
-    /// Returns the requested broker session expiry.
-    pub const fn session_expiry_seconds(&self) -> u32 {
-        self.session_expiry_seconds
+    /// Returns the selected version-specific session behavior.
+    pub const fn session(&self) -> SessionConfig {
+        self.session
+    }
+    /// Returns the selected MQTT wire protocol.
+    pub const fn protocol_version(&self) -> ProtocolVersion {
+        self.session.protocol_version()
     }
     /// Returns the largest inbound MQTT packet accepted by this client.
     pub const fn maximum_packet_size(&self) -> u32 {
@@ -324,6 +627,8 @@ pub enum ErrorKind {
     Transport,
     /// The broker rejected an operation or sent invalid protocol data.
     Protocol,
+    /// The broker rejected the supplied connection identity or credential.
+    Authentication,
     /// The active connection was closed.
     Disconnected,
     /// An operation cannot currently make progress.
@@ -506,6 +811,34 @@ mod tests {
         );
         assert_eq!(ClientId::new(""), Err(ConfigError::Empty));
         assert_eq!(BrokerPort::new(0), Err(ConfigError::InvalidPort));
+    }
+
+    #[test]
+    fn mqtt_versions_keep_their_session_semantics_separate() {
+        let hostname = BrokerHostname::new("broker.example.test").unwrap();
+        let port = BrokerPort::new(8883).unwrap();
+        let client_id = ClientId::new("test-client").unwrap();
+
+        let v311 = Config::new_v311(hostname, port, client_id, 60, false, 1024).unwrap();
+        assert_eq!(v311.protocol_version(), ProtocolVersion::V3_1_1);
+        assert_eq!(
+            v311.session(),
+            SessionConfig::V3_1_1(V311SessionConfig::new(false))
+        );
+
+        let v5 = Config::new_v5(hostname, port, client_id, 60, 300, 1024).unwrap();
+        assert_eq!(v5.protocol_version(), ProtocolVersion::V5);
+        assert_eq!(v5.session(), SessionConfig::V5(V5SessionConfig::new(300)));
+    }
+
+    #[test]
+    fn portable_client_identifier_accepts_cloud_identity_length() {
+        let identifier = "a".repeat(MAX_CLIENT_ID_LEN);
+        assert!(ClientId::new(&identifier).is_ok());
+        assert_eq!(
+            ClientId::new(&(identifier + "a")),
+            Err(ConfigError::TooLong)
+        );
     }
 
     #[test]

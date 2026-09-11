@@ -814,7 +814,7 @@ fn development_mqtt_config() -> Result<Option<MqttDevelopmentConfig>, &'static s
         "/commands",
     )?)
     .map_err(|_| "MQTT command topic is invalid")?;
-    let session = MqttConfig::new(
+    let session = MqttConfig::new_v5(
         hostname,
         port,
         client_id,
