@@ -30,13 +30,16 @@ pub(crate) fn encode_connect(
     client_id: &str,
     keep_alive: u16,
     clean_session: bool,
-    credentials: Option<(&str, &[u8])>,
+    credentials: Option<(&str, Option<&[u8]>)>,
     output: &mut [u8],
 ) -> Result<usize, Error<core::convert::Infallible>> {
     let payload_len = string_len(client_id)?
         .checked_add(match credentials {
             Some((username, password)) => string_len(username)?
-                .checked_add(binary_len(password)?)
+                .checked_add(match password {
+                    Some(password) => binary_len(password)?,
+                    None => 0,
+                })
                 .ok_or(Error::Capacity)?,
             None => 0,
         })
@@ -45,15 +48,20 @@ pub(crate) fn encode_connect(
     let mut writer = Writer::packet(output, 0x10, remaining)?;
     writer.bytes(b"\0\x04MQTT\x04")?;
     let mut flags = u8::from(clean_session) << 1;
-    if credentials.is_some() {
-        flags |= 0xc0;
+    if let Some((_, password)) = credentials {
+        flags |= 0x80;
+        if password.is_some() {
+            flags |= 0x40;
+        }
     }
     writer.byte(flags)?;
     writer.u16(keep_alive)?;
     writer.string(client_id)?;
     if let Some((username, password)) = credentials {
         writer.string(username)?;
-        writer.binary(password)?;
+        if let Some(password) = password {
+            writer.binary(password)?;
+        }
     }
     Ok(writer.len())
 }
@@ -427,12 +435,23 @@ mod tests {
             "sensor-01",
             240,
             false,
-            Some(("hub/sensor", b"token")),
+            Some(("hub/sensor", Some(b"token"))),
             &mut output,
         )
         .unwrap();
         assert_eq!(&output[2..9], b"\0\x04MQTT\x04");
         assert_eq!(output[9], 0xc0);
+        assert_eq!(len, usize::from(output[1]) + 2);
+
+        let len = encode_connect(
+            "sensor-01",
+            240,
+            false,
+            Some(("hub/sensor", None)),
+            &mut output,
+        )
+        .unwrap();
+        assert_eq!(output[9], 0x80);
         assert_eq!(len, usize::from(output[1]) + 2);
     }
 

@@ -20,19 +20,18 @@ The initial firmware proves:
   probe through `embassy-net`.
 - A compile-tested MQTT 5 plaintext fixture with bounded packet buffers,
   queueing, session recovery, and independent reconnect behavior.
-- A dedicated Azure IoT preflight image with hardware-RNG registration,
-  public configuration validation, DNS resolution, fixed MQTT 3.1.1 replay
-  storage, and bounded RAM telemetry queueing. Authenticated cloud traffic is
-  still gated on trusted time, trust roots, and runtime credentials.
+- A dedicated Azure IoT image with an opt-in development X.509 path covering
+  hardware RNG, DNS/TCP, mutual TLS, MQTT 3.1.1, twins, direct methods,
+  telemetry, and reconnect. Its safe default contains no device identity.
 - Connectable BLE advertising and a reference GATT status service through
   TrouBLE.
 - Dedicated non-connectable iBeacon advertising with deployment-configurable
   identity, interval, calibrated RSSI, and controller TX power.
 - Concurrent Wi-Fi/BLE radio operation through Espressif coexistence support.
 
-Secure BLE provisioning and bonding, IEEE 802.15.4/OpenThread, live
-authenticated TLS/MQTT, production cloud protocols, and OTA are not part of
-this bring-up.
+Secure BLE provisioning and bonding, IEEE 802.15.4/OpenThread, production
+credential/time provisioning, supported cloud protocols, and OTA are not part
+of this bring-up.
 
 ## Toolchain
 
@@ -69,10 +68,10 @@ Build the dedicated BLE scanner firmware with:
 cargo xtask build xiao-esp32c6/beacon-scanner
 ```
 
-Build the dedicated Azure IoT preflight firmware with:
+Build the dedicated Azure IoT firmware with:
 
 ```sh
-cargo xtask build-xiao-esp32c6-azure-iot
+cargo xtask build xiao-esp32c6/azure-iot
 ```
 
 The resulting ELF is written below:
@@ -120,17 +119,15 @@ cargo xtask run xiao-esp32c6/beacon-scanner
 See the [Beacon Scanner Guide](../connectivity/beacon-scanner.md) for output
 fields and address-privacy considerations.
 
-To flash the Azure IoT preflight image, run:
+To flash the Azure IoT image, run:
 
 ```sh
-cargo xtask run-xiao-esp32c6-azure-iot
+cargo xtask run xiao-esp32c6/azure-iot
 ```
 
-Its safe default does not connect to Azure. Public hub settings and Wi-Fi
-development inputs are documented in the
-[firmware guide](../../firmware/seeed/xiao-esp32c6-azure-iot/README.md). Do not
-provide a connection string, symmetric key, or reusable SAS token as a build
-input.
+Its safe default does not connect to Azure. The explicitly gated development
+X.509 inputs and their security limits are documented in the
+[firmware guide](../../firmware/seeed/xiao-esp32c6-azure-iot/README.md).
 
 For development-only association with a WPA2/WPA3 network:
 

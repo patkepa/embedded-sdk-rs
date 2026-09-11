@@ -20,10 +20,12 @@ bench = false
 
 [dependencies]
 embassy-executor.workspace = true
+embassy-futures.workspace = true
 embassy-net.workspace = true
 embassy-time.workspace = true
 embedded-sdk-board-xiao-esp32c6.workspace = true
 embedded-sdk-cloud-azure-iot.workspace = true
+embedded-sdk-mqtt.workspace = true
 embedded-sdk-mqtt-v311.workspace = true
 embedded-sdk-networking-embassy-net.workspace = true
 embedded-sdk-platform-esp32c6 = { workspace = true, features = ["hardware-rng", "wifi"] }
@@ -47,6 +49,7 @@ esp-rtos = { workspace = true, features = [
     "esp32c6",
 ] }
 getrandom.workspace = true
+pem-rfc7468.workspace = true
 static_cell.workspace = true
 
 [lints]

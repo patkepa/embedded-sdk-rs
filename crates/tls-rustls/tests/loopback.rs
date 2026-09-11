@@ -20,14 +20,16 @@ use embedded_sdk_mqtt_v311::{
 };
 use embedded_sdk_security::{TimeError, TrustedTime, UnixTime};
 use embedded_sdk_tls_rustls::{
-    ConfigError, Error, TlsBuffers, TlsClientConfig, TlsRootStore, TlsStream,
+    ClientPrivateKey, ConfigError, Error, TlsBuffers, TlsClientConfig, TlsRootStore, TlsStream,
 };
 use rcgen::{
-    CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_RSA_SHA256, date_time_ymd,
+    BasicConstraints, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
+    Issuer, KeyPair, KeyUsagePurpose, PKCS_RSA_SHA256, date_time_ymd,
 };
 use rustls::{
-    ServerConfig, SupportedCipherSuite,
+    RootCertStore, ServerConfig, SupportedCipherSuite,
     pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer},
+    server::WebPkiClientVerifier,
     version::TLS12,
 };
 
@@ -50,6 +52,12 @@ fn block_on<F: Future>(future: F) -> F::Output {
 struct TestIdentity {
     certificate: rustls::pki_types::CertificateDer<'static>,
     private_key: PrivatePkcs8KeyDer<'static>,
+}
+
+struct TestClientIdentity {
+    certificate: rustls::pki_types::CertificateDer<'static>,
+    private_key: PrivatePkcs8KeyDer<'static>,
+    issuer: rustls::pki_types::CertificateDer<'static>,
 }
 
 fn test_identity(hostname: &str) -> TestIdentity {
@@ -77,6 +85,39 @@ fn test_ecdsa_identity(hostname: &str) -> TestIdentity {
     TestIdentity {
         certificate: certificate.der().clone(),
         private_key: PrivatePkcs8KeyDer::from(key.serialize_der()),
+    }
+}
+
+fn test_client_identity() -> TestClientIdentity {
+    let mut ca_params = CertificateParams::new(Vec::new()).unwrap();
+    ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    ca_params
+        .distinguished_name
+        .push(DnType::CommonName, "test client CA");
+    ca_params.key_usages.push(KeyUsagePurpose::DigitalSignature);
+    ca_params.key_usages.push(KeyUsagePurpose::KeyCertSign);
+    ca_params.not_before = date_time_ymd(2025, 1, 1);
+    ca_params.not_after = date_time_ymd(2035, 1, 1);
+    let ca_key = KeyPair::generate().unwrap();
+    let ca_certificate = ca_params.self_signed(&ca_key).unwrap();
+    let issuer = Issuer::new(ca_params, ca_key);
+
+    let key = KeyPair::generate().unwrap();
+    let mut params = CertificateParams::new(Vec::new()).unwrap();
+    params
+        .distinguished_name
+        .push(DnType::CommonName, "device-01");
+    params.key_usages.push(KeyUsagePurpose::DigitalSignature);
+    params
+        .extended_key_usages
+        .push(ExtendedKeyUsagePurpose::ClientAuth);
+    params.not_before = date_time_ymd(2025, 1, 1);
+    params.not_after = date_time_ymd(2035, 1, 1);
+    let certificate = params.signed_by(&key, &issuer).unwrap();
+    TestClientIdentity {
+        certificate: certificate.der().clone(),
+        private_key: PrivatePkcs8KeyDer::from(key.serialize_der()),
+        issuer: ca_certificate.der().clone(),
     }
 }
 
@@ -135,6 +176,42 @@ impl LoopbackServer {
             encrypted_to_client: VecDeque::new(),
             received_plaintext: Vec::new(),
             application,
+            processed_plaintext: 0,
+            corrupt_next_read: false,
+        }
+    }
+
+    fn requiring_client_certificate(
+        identity: &TestIdentity,
+        client_issuer: &rustls::pki_types::CertificateDer<'static>,
+    ) -> Self {
+        let mut provider = rustls_rustcrypto::provider();
+        provider.cipher_suites = vec![
+            rustls_rustcrypto::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+            rustls_rustcrypto::TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+        ];
+        let mut client_roots = RootCertStore::empty();
+        client_roots.add(client_issuer.clone()).unwrap();
+        let verifier = WebPkiClientVerifier::builder_with_provider(
+            Arc::new(client_roots),
+            Arc::new(provider.clone()),
+        )
+        .build()
+        .unwrap();
+        let config = ServerConfig::builder_with_provider(Arc::new(provider))
+            .with_protocol_versions(&[&TLS12])
+            .unwrap()
+            .with_client_cert_verifier(verifier)
+            .with_single_cert(
+                vec![identity.certificate.clone()],
+                PrivateKeyDer::Pkcs8(identity.private_key.clone_key()),
+            )
+            .unwrap();
+        Self {
+            server: rustls::ServerConnection::new(Arc::new(config)).unwrap(),
+            encrypted_to_client: VecDeque::new(),
+            received_plaintext: Vec::new(),
+            application: TestApplication::FixedResponse { replied: false },
             processed_plaintext: 0,
             corrupt_next_read: false,
         }
@@ -386,6 +463,91 @@ fn handshakes_with_sni_and_transfers_encrypted_bytes() {
     assert_eq!(&response[..read], RESPONSE);
     assert_eq!(stream.get_ref().received_plaintext, REQUEST);
     block_on(stream.close()).unwrap();
+}
+
+#[test]
+fn authenticates_with_a_client_certificate() {
+    let server_identity = test_identity(HOSTNAME);
+    let client_identity = test_client_identity();
+    let roots = TlsRootStore::from_der_roots([server_identity.certificate.as_ref()]).unwrap();
+    let config = TlsClientConfig::from_trust_roots_with_client_auth(
+        roots,
+        &FixedTime(NOW),
+        1024,
+        &[client_identity.certificate.as_ref()],
+        ClientPrivateKey::Pkcs8(client_identity.private_key.secret_pkcs8_der()),
+    )
+    .unwrap();
+    let server =
+        LoopbackServer::requiring_client_certificate(&server_identity, &client_identity.issuer);
+    let (mut incoming, mut outgoing, mut plaintext) = buffers();
+    let mut stream = block_on(TlsStream::connect(
+        server,
+        &config,
+        HOSTNAME,
+        TlsBuffers {
+            incoming_tls: &mut incoming,
+            outgoing_tls: &mut outgoing,
+            plaintext: &mut plaintext,
+        },
+    ))
+    .unwrap();
+
+    assert_eq!(block_on(stream.write(REQUEST)).unwrap(), REQUEST.len());
+    let mut response = [0_u8; 64];
+    let read = block_on(stream.read(&mut response)).unwrap();
+    assert_eq!(&response[..read], RESPONSE);
+}
+
+#[test]
+fn server_rejects_a_missing_client_certificate() {
+    let server_identity = test_identity(HOSTNAME);
+    let client_identity = test_client_identity();
+    let config = config_for(&server_identity, NOW);
+    let server =
+        LoopbackServer::requiring_client_certificate(&server_identity, &client_identity.issuer);
+    let (mut incoming, mut outgoing, mut plaintext) = buffers();
+    let result = block_on(TlsStream::connect(
+        server,
+        &config,
+        HOSTNAME,
+        TlsBuffers {
+            incoming_tls: &mut incoming,
+            outgoing_tls: &mut outgoing,
+            plaintext: &mut plaintext,
+        },
+    ));
+    assert!(result.is_err());
+}
+
+#[test]
+fn server_rejects_an_untrusted_client_certificate() {
+    let server_identity = test_identity(HOSTNAME);
+    let trusted_client = test_client_identity();
+    let untrusted_client = test_client_identity();
+    let roots = TlsRootStore::from_der_roots([server_identity.certificate.as_ref()]).unwrap();
+    let config = TlsClientConfig::from_trust_roots_with_client_auth(
+        roots,
+        &FixedTime(NOW),
+        1024,
+        &[untrusted_client.certificate.as_ref()],
+        ClientPrivateKey::Pkcs8(untrusted_client.private_key.secret_pkcs8_der()),
+    )
+    .unwrap();
+    let server =
+        LoopbackServer::requiring_client_certificate(&server_identity, &trusted_client.issuer);
+    let (mut incoming, mut outgoing, mut plaintext) = buffers();
+    let result = block_on(TlsStream::connect(
+        server,
+        &config,
+        HOSTNAME,
+        TlsBuffers {
+            incoming_tls: &mut incoming,
+            outgoing_tls: &mut outgoing,
+            plaintext: &mut plaintext,
+        },
+    ));
+    assert!(result.is_err());
 }
 
 #[test]

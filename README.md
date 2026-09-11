@@ -28,14 +28,15 @@ boundaries.
 MQTT has a portable, version-aware bounded API, a `minimq` MQTT 5 adapter, and
 an experimental allocation-free MQTT 3.1.1 adapter for the Azure work. The
 existing XIAO firmware's plaintext transport remains a local fixture; neither
-path is production support until the authenticated TLS and hardware validation
-gates pass. See the [MQTT guide](docs/connectivity/mqtt.md).
+path is production support until the live-service, credential, and hardware
+validation gates pass. See the [MQTT guide](docs/connectivity/mqtt.md).
 
-The dedicated XIAO Azure IoT firmware now compile-checks public hub identity,
-hardware entropy registration, DNS resolution, fixed MQTT replay storage, and
-a bounded RAM telemetry queue. It intentionally stops before authentication
-until trusted time, trust roots, and a runtime credential source are composed.
-See its [firmware guide](firmware/seeed/xiao-esp32c6-azure-iot/README.md).
+The dedicated XIAO Azure IoT firmware has an opt-in development X.509 path
+covering mutual TLS, MQTT 3.1.1, subscription restoration, twin synchronization,
+reported properties, telemetry, direct-method responses, and reconnect. Its
+safe default remains disconnected, and production identity/time provisioning
+and live hardware gates remain open. See its
+[firmware guide](firmware/seeed/xiao-esp32c6-azure-iot/README.md).
 
 A dedicated non-connectable iBeacon firmware is also available for the XIAO
 ESP32C6. See the [Beacon Guide](docs/connectivity/beacon.md) for deployment

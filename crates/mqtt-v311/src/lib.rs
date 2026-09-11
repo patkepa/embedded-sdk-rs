@@ -28,11 +28,15 @@ pub enum TransportSecurity {
     PlaintextFixture,
 }
 
-/// MQTT username and password borrowed only while encoding CONNECT.
+/// MQTT authentication fields borrowed only while encoding CONNECT.
+///
+/// SAS authentication uses both fields. Azure X.509 authentication uses a
+/// username without an MQTT password because the client identity is proven by
+/// mutual TLS.
 #[derive(Clone, Copy)]
 pub struct Credentials<'a> {
     username: &'a str,
-    password: &'a [u8],
+    password: Option<&'a [u8]>,
 }
 
 impl<'a> Credentials<'a> {
@@ -41,7 +45,22 @@ impl<'a> Credentials<'a> {
         if username.is_empty() || username.contains('\0') || password.is_empty() {
             return Err(AdapterConfigError::InvalidCredentials);
         }
-        Ok(Self { username, password })
+        Ok(Self {
+            username,
+            password: Some(password),
+        })
+    }
+
+    /// Creates the username-only CONNECT identity required by Azure X.509
+    /// authentication over an already mutually authenticated TLS stream.
+    pub fn username_only(username: &'a str) -> Result<Self, AdapterConfigError> {
+        if username.is_empty() || username.contains('\0') {
+            return Err(AdapterConfigError::InvalidCredentials);
+        }
+        Ok(Self {
+            username,
+            password: None,
+        })
     }
 }
 
@@ -916,6 +935,9 @@ mod tests {
         ));
         assert!(matches!(result, Err(Error::CredentialsRequireEncryption)));
         assert_eq!(format!("{credentials:?}"), "Credentials(**REDACTED**)");
+        assert!(Credentials::username_only("").is_err());
+        assert!(Credentials::username_only("bad\0user").is_err());
+        assert!(Credentials::username_only("hub/sensor").is_ok());
     }
 
     #[test]

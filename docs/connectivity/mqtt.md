@@ -41,15 +41,16 @@ this first slice.
 
 ## Security status
 
-An experimental server-authenticated TLS 1.2 stream now carries MQTT 3.1.1 in
-host tests, including Azure SAS credentials and QoS 1 telemetry. This is not
-yet live hardware or production support. The existing general reference
+An experimental TLS 1.2 stream now carries MQTT 3.1.1 in host tests, including
+Azure SAS credentials, X.509 client authentication, and QoS 1 telemetry. The
+existing general reference
 firmware still contains only a plaintext path for an isolated local fixture.
 It requires the explicit `MQTT_PLAINTEXT_FIXTURE=1` build input, rejects all
 MQTT credential inputs, and must not carry reusable credentials or sensitive
-payloads. The separate Azure firmware compile-checks its hardware entropy and
-bounded MQTT 3.1.1 resources but stops before TLS authentication until trusted
-time, roots, and runtime credentials are available.
+payloads. The separate Azure firmware composes an explicitly gated development
+X.509 identity with verified TLS, MQTT, Azure synchronization, telemetry, and
+reconnect. This is compile-tested hardware code, not live-service or production
+support.
 
 Both adapters accept credentials only when composition declares an encrypted
 transport. Production firmware must not make that declaration until it

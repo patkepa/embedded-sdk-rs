@@ -4,7 +4,7 @@
 
 extern crate alloc;
 
-use alloc::{sync::Arc, vec};
+use alloc::{sync::Arc, vec, vec::Vec};
 use core::{cmp, fmt, time::Duration};
 
 use embedded_io_async::{ErrorType, Read, Write};
@@ -12,7 +12,10 @@ use embedded_sdk_security::{TimeError, TrustedTime, UnixTime};
 use rustls::{
     ClientConfig, RootCertStore,
     client::UnbufferedClientConnection,
-    pki_types::{CertificateDer, ServerName},
+    pki_types::{
+        CertificateDer, PrivateKeyDer, PrivatePkcs1KeyDer, PrivatePkcs8KeyDer, PrivateSec1KeyDer,
+        ServerName,
+    },
     time_provider::TimeProvider,
     unbuffered::{ConnectionState, EncodeError, EncryptError},
     version::TLS12,
@@ -43,6 +46,10 @@ pub enum ConfigError {
     InvalidCryptoPolicy(rustls::Error),
     /// Trusted wall-clock time was unavailable for certificate validation.
     UntrustedTime(TimeError),
+    /// Mutual TLS was requested without a client certificate.
+    EmptyClientCertificateChain,
+    /// The client certificate and private key could not form a TLS identity.
+    InvalidClientIdentity(rustls::Error),
 }
 
 impl fmt::Display for ConfigError {
@@ -59,11 +66,33 @@ impl fmt::Display for ConfigError {
             Self::UntrustedTime(_) => {
                 formatter.write_str("trusted time unavailable for TLS verification")
             }
+            Self::EmptyClientCertificateChain => {
+                formatter.write_str("TLS client certificate chain must not be empty")
+            }
+            Self::InvalidClientIdentity(_) => {
+                formatter.write_str("invalid TLS client certificate or private key")
+            }
         }
     }
 }
 
 impl core::error::Error for ConfigError {}
+
+/// DER encoding of a software private key used for mutual TLS.
+///
+/// The TLS configuration copies the key into zeroizing provider-owned key
+/// material. Firmware should erase mutable provisioning buffers after this
+/// constructor returns. Opaque hardware-backed signing requires a separate
+/// client-certificate resolver and is intentionally not implied here.
+#[derive(Clone, Copy)]
+pub enum ClientPrivateKey<'a> {
+    /// PKCS#1 RSA private key.
+    Pkcs1(&'a [u8]),
+    /// PKCS#8 private key.
+    Pkcs8(&'a [u8]),
+    /// SEC1 elliptic-curve private key.
+    Sec1(&'a [u8]),
+}
 
 /// Parsed TLS trust anchors owned independently from connection policy.
 ///
@@ -203,6 +232,52 @@ impl TlsClientConfig {
         trusted_time: &impl TrustedTime,
         max_plaintext_fragment: usize,
     ) -> Result<Self, ConfigError> {
+        Self::from_root_store_and_identity(root_store, trusted_time, max_plaintext_fragment, None)
+    }
+
+    /// Builds a TLS 1.2 configuration with a software X.509 client identity.
+    ///
+    /// Certificates must be ordered leaf first followed by intermediates. Root
+    /// certificates should not be included in the client chain.
+    pub fn from_trust_roots_with_client_auth(
+        trust_roots: TlsRootStore,
+        trusted_time: &impl TrustedTime,
+        max_plaintext_fragment: usize,
+        client_certificate_chain: &[&[u8]],
+        client_private_key: ClientPrivateKey<'_>,
+    ) -> Result<Self, ConfigError> {
+        if client_certificate_chain.is_empty() {
+            return Err(ConfigError::EmptyClientCertificateChain);
+        }
+        let certificates = client_certificate_chain
+            .iter()
+            .map(|certificate| CertificateDer::from((*certificate).to_vec()))
+            .collect();
+        let private_key = match client_private_key {
+            ClientPrivateKey::Pkcs1(key) => {
+                PrivateKeyDer::Pkcs1(PrivatePkcs1KeyDer::from(key.to_vec()))
+            }
+            ClientPrivateKey::Pkcs8(key) => {
+                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.to_vec()))
+            }
+            ClientPrivateKey::Sec1(key) => {
+                PrivateKeyDer::Sec1(PrivateSec1KeyDer::from(key.to_vec()))
+            }
+        };
+        Self::from_root_store_and_identity(
+            trust_roots.inner,
+            trusted_time,
+            max_plaintext_fragment,
+            Some((certificates, private_key)),
+        )
+    }
+
+    fn from_root_store_and_identity(
+        root_store: RootCertStore,
+        trusted_time: &impl TrustedTime,
+        max_plaintext_fragment: usize,
+        client_identity: Option<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)>,
+    ) -> Result<Self, ConfigError> {
         if root_store.is_empty() {
             return Err(ConfigError::EmptyRootStore);
         }
@@ -222,9 +297,13 @@ impl TlsClientConfig {
                 .with_protocol_versions(&[&TLS12])
                 .map_err(ConfigError::InvalidCryptoPolicy)?;
 
-        let mut inner = builder
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
+        let builder = builder.with_root_certificates(root_store);
+        let mut inner = match client_identity {
+            Some((certificates, private_key)) => builder
+                .with_client_auth_cert(certificates, private_key)
+                .map_err(ConfigError::InvalidClientIdentity)?,
+            None => builder.with_no_client_auth(),
+        };
         inner.max_fragment_size = Some(max_plaintext_fragment);
         inner.enable_sni = true;
 
@@ -834,6 +913,38 @@ mod tests {
         let config = TlsClientConfig::from_root_store(roots, &FixedTime(Ok(NOW)), 1024).unwrap();
         assert_eq!(config.max_plaintext_fragment(), 1024);
         assert_eq!(config.inner.crypto_provider().cipher_suites.len(), 2);
+    }
+
+    #[test]
+    fn rejects_missing_or_invalid_client_identity() {
+        let roots = TlsRootStore::from_root_store(RootCertStore {
+            roots: webpki_roots::TLS_SERVER_ROOTS
+                .iter()
+                .take(1)
+                .cloned()
+                .collect(),
+        })
+        .unwrap();
+        assert!(matches!(
+            TlsClientConfig::from_trust_roots_with_client_auth(
+                roots.clone(),
+                &FixedTime(Ok(NOW)),
+                1024,
+                &[],
+                ClientPrivateKey::Pkcs8(b"invalid"),
+            ),
+            Err(ConfigError::EmptyClientCertificateChain)
+        ));
+        assert!(matches!(
+            TlsClientConfig::from_trust_roots_with_client_auth(
+                roots,
+                &FixedTime(Ok(NOW)),
+                1024,
+                &[b"invalid"],
+                ClientPrivateKey::Pkcs8(b"invalid"),
+            ),
+            Err(ConfigError::InvalidClientIdentity(_))
+        ));
     }
 
     #[test]

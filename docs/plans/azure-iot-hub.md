@@ -20,12 +20,14 @@
   IDs, a bounded method dispatcher with deadlines/overload responses, and
   delayed inbound PUBACK or disconnect-for-redelivery rejection. A bounded
   RAM telemetry FIFO now retains active entries across MQTT replay and Azure
-  provider reattachment. A dedicated XIAO firmware now owns public Azure
-  configuration, registers the hardware RNG in the final binary, resolves the
-  hub, and instantiates fixed MQTT replay and telemetry-queue storage. Trusted
-  time, runtime credentials, the live TLS/MQTT supervisor, independently
-  updateable protected trust storage, entropy/HIL and full-path resource
-  validation, durable telemetry, and live IoT Hub gates remain open
+  provider reattachment. A dedicated XIAO firmware now provides an explicitly
+  gated development X.509 path composing hardware RNG, caller-injected trusted
+  time, DNS/TCP, mutual TLS, username-only MQTT authentication, subscription
+  restoration, twin synchronization, reported properties, telemetry, bounded
+  direct-method handling, IP-loss cancellation, and reconnect backoff.
+  Protected runtime credentials or an opaque signer, production trusted-time
+  acquisition/persistence, independently updateable protected trust storage,
+  entropy/HIL validation, durable telemetry, and live IoT Hub gates remain open
 - Branch: `feat/cloud-iot-hub`
 - Initial target: Seeed Studio XIAO ESP32C6
 - Cloud service: Azure IoT Hub
@@ -44,10 +46,10 @@
 | Cloud core | Allocation-free capabilities, lifecycle/error domains, and health snapshot | Extend only from proven provider needs |
 | Azure identity | Bounded hub/device configuration, MQTT client ID, username, port, and persistent-session translation | Module identities and DPS identities |
 | Azure operations | Telemetry properties plus a compile-time-bounded RAM FIFO with local tokens, expiration, and retained PUBACK recovery; C2D parsing plus a bounded owned payload/property FIFO; direct-method request parsing and QoS 1 response correlation with fixed-capacity owned request IDs; a bounded method FIFO with caller-clock deadlines and 429/504 handling; QoS 1 capacity rejection by disconnecting without PUBACK; twin GET and reported-PATCH correlation; desired-version parsing; capability-gated inbound routing; four-filter fresh-session setup; reconnect full-twin synchronization; an async session coordinator; and reference-firmware telemetry staging | Live reference-firmware delivery, durable telemetry, product method-handler execution, skipped/stale desired-version policy, and application activation/reporting integration |
-| Authentication | Trusted-time contract, monotonic anchored-clock enforcement, credential lease, zeroizing secret storage with an async-safe redacted borrow, secure-random contract, device-key base64 decoding, HMAC-SHA256 SAS token generation, an async runtime key-source/credential-provider boundary, primary/secondary key-slot selection, and safe provider-error formatting | Trusted snapshot acquisition/persistence, concrete protected key source, firmware refresh/reconnect execution, production time policy, X.509 identity |
-| TLS transport | `no_std` rustls unbuffered stream with caller-owned record/plaintext buffers, explicit trust roots and time, bounded PEM root decoding, DNS-name SNI/verification, TLS 1.2-only Azure RSA/AES-GCM policy, target compilation, an in-process fragmented TLS peer, MQTT 3.1.1 composition, host negative verification, an opt-in ESP32-C6 RNG/getrandom bridge, final-binary RNG registration, and a firmware-owned two-root IoT Hub bundle verified against Microsoft guidance | Trusted-time firmware composition, live handshake, independently updateable protected roots, entropy validation, full-path heap/stack measurements, HIL, X.509 client auth, and alpha-provider review |
-| Recovery | Failure-domain-specific next actions, bounded jittered reconnect delay, Azure retry-delay precedence, immediate primary/secondary SAS fallback, and stable-online backoff reset | Firmware timer/I/O execution, live fault injection, durable outage state |
-| Verification | Host unit/golden tests, fragmented-stream MQTT session tests, Mosquitto 2.0.22 MQTT 3.1.1 QoS 1 interoperability, TLS 1.2 success/SNI/encrypted-I/O, full Azure-config/SAS/TLS/MQTT/telemetry/PUBACK composition, async provider synchronization/acceptance tests, recovery-policy tests, host TLS trust/hostname/time/cipher/corruption/truncation rejection tests, an ignored opt-in live IoT Hub telemetry test, strict linting of affected crates, bare-metal RISC-V compilation, and CI compilation of the dedicated firmware | Executed live IoT Hub evidence, fuzzing, ESP32-C6 HIL, and full-path resource measurements |
+| Authentication | Trusted-time contract, monotonic anchored-clock enforcement, SAS generation/rotation boundaries, username-only X.509 MQTT identity, and an explicitly gated development X.509 firmware identity | Trusted snapshot acquisition/persistence, protected runtime key source or opaque signer, production time policy, and rotation |
+| TLS transport | `no_std` rustls unbuffered stream with caller-owned buffers, explicit trust roots/time, SNI/verification, TLS 1.2 Azure policy, software PKCS#1/PKCS#8/SEC1 client keys, mutual-TLS positive/negative tests, ESP32-C6 RNG registration, and firmware composition | Live handshake, independently updateable protected roots, entropy/HIL validation, opaque signing, and alpha-provider review |
+| Recovery | Failure-domain policy plus firmware IP-loss cancellation and bounded reconnect execution | Live fault injection and durable outage state |
+| Verification | Host unit/golden tests, MQTT/TLS interoperability, mutual-TLS positive/negative tests, full Azure SAS loopback composition, strict linting, safe-default and credential-configured bare-metal builds, and a linked image resource snapshot | Executed live IoT Hub evidence, fuzzing, ESP32-C6 HIL, and runtime peak resource measurements |
 
 ## Executive recommendation
 
@@ -361,19 +363,17 @@ It is `no_std` and keeps record/plaintext spill buffers caller-owned, but the
 TLS engine and crypto provider require `alloc`; this must be measured rather
 than described as allocation-free.
 
-The proof currently implements server-authenticated TLS 1.2, a replaceable
-root store, trusted-time snapshots, DNS-name SNI/verification, restricted
-Azure-compatible RSA/AES-GCM suites, fixed record buffers, and distinct TLS,
-transport, EOF, and capacity failures. An in-process RSA peer proves a
-fragmented TLS 1.2 handshake, SNI, encrypted bidirectional I/O, and rejection
-of wrong hostnames, unknown roots, untrusted time, not-yet-valid or expired
-certificates, IP identities, incompatible ciphers, corrupted records, and
-truncated handshakes. The ESP32-C6 port now exposes an opt-in `SecureRandom`
-implementation and the function a final binary registers as the TLS provider's
-custom `getrandom` backend. Both make the RF-active entropy precondition
-explicit and compile for the bare-metal target. Final-binary registration,
-entropy validation, hardware execution, and X.509 client authentication remain
-required. A generic authenticated MQTT 3.1.1 CONNECT and QoS 1
+The proof currently implements TLS 1.2 server verification and software X.509
+client authentication, a replaceable root store, trusted-time snapshots,
+DNS-name SNI/verification, restricted Azure-compatible RSA/AES-GCM suites,
+fixed record buffers, and distinct TLS, transport, EOF, and capacity failures.
+In-process peers prove fragmented handshakes, mutual TLS, encrypted
+bidirectional I/O, rejection of a missing client certificate, and the existing
+hostname/root/time/cipher/corruption/truncation negative baseline. The ESP32-C6
+port exposes an opt-in `SecureRandom` implementation and the function the
+firmware registers as the TLS provider's custom `getrandom` backend. Entropy
+validation, live hardware execution, protected identity loading, and opaque
+signing remain required. A generic authenticated MQTT 3.1.1 CONNECT and QoS 1
 PUBLISH/PUBACK exchange now passes through the TLS stream without
 Azure-specific code.
 
@@ -871,18 +871,22 @@ accept remote state-changing commands. Subsequent slices add one harmless
 direct method, one reported property, and one desired property before exposing
 general product hooks.
 
-The current preflight slice stages that heartbeat in the bounded RAM queue,
-validates the public identity, registers and exercises hardware entropy after
-radio startup, validates the versioned DigiCert Global Root G2 and Microsoft
-RSA Root 2017 bundle, and resolves the hub. It intentionally does not open
-TCP/TLS or consume credentials yet. This is a compile-tested composition
-milestone, not a live IoT Hub claim.
+The current firmware stages that heartbeat in the bounded RAM queue, validates
+the public identity, registers and exercises hardware entropy after radio
+startup, validates the DigiCert Global Root G2 and Microsoft RSA Root 2017
+bundle, and—only behind an explicit development credential gate—opens TCP,
+performs mutual TLS and MQTT CONNECT, restores subscriptions, synchronizes the
+twin, reports properties, sends telemetry, handles method responses, and
+reconnects. This is a compile-tested composition milestone, not a live IoT Hub
+claim.
 
 Development input names should distinguish public configuration from secrets:
 
 - `AZURE_IOT_HUB_HOSTNAME`;
 - `AZURE_IOT_DEVICE_ID`;
-- `AZURE_IOT_AUTH_MODE`;
+- `AZURE_IOT_AUTH_MODE=development-x509`;
+- `AZURE_IOT_ALLOW_EMBEDDED_DEVELOPMENT_CREDENTIALS=1`;
+- development-only client certificate/private-key PEM and trusted-time inputs;
 - a runtime/injected credential reference rather than a logged connection
   string;
 - a separately named development-only short-lived SAS-token input;

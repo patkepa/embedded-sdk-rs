@@ -3372,10 +3372,12 @@ name = "xiao-esp32c6-azure-iot"
 version = "0.1.0"
 dependencies = [
  "embassy-executor",
+ "embassy-futures",
  "embassy-net",
  "embassy-time",
  "embedded-sdk-board-xiao-esp32c6",
  "embedded-sdk-cloud-azure-iot",
+ "embedded-sdk-mqtt",
  "embedded-sdk-mqtt-v311",
  "embedded-sdk-networking-embassy-net",
  "embedded-sdk-platform-esp32c6",
@@ -3389,6 +3391,7 @@ dependencies = [
  "esp-println",
  "esp-rtos",
  "getrandom",
+ "pem-rfc7468",
  "static_cell",
 ]
 
