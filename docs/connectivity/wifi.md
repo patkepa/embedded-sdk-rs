@@ -79,7 +79,11 @@ policy must be defined before production deployment.
 - Firmware owns the allocator, scheduler startup, board RF controls, credential
   source, retry policy, and whether radio failures are fatal or degraded.
 - SSIDs are modeled as up to 32 arbitrary bytes. The current ESP station API
-  accepts textual SSIDs, so the adapter rejects non-UTF-8 station identities.
+  accepts textual SSIDs, so the adapter rejects non-UTF-8 station identities
+  and scan records instead of silently returning a truncated identity.
+- ESP scan results are bounded before constructing the portable result list.
+  The pinned ESP driver still temporarily collects its complete scan result
+  internally before the adapter can apply that bound.
 - Scan records may contain network identity. Product telemetry should prefer
   `ScanSummary` unless explicit disclosure is required and approved.
 

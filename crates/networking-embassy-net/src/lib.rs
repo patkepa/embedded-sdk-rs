@@ -151,17 +151,22 @@ fn copy_ipv4_addresses(
     }
 
     let mut len = 0;
+    #[allow(
+        irrefutable_let_patterns,
+        reason = "IpAddress gains IPv6 variants when downstream code enables Embassy's additive proto-ipv6 feature"
+    )]
     for address in addresses {
-        let IpAddress::Ipv4(address) = address;
-        output[len] = *address;
-        len += 1;
+        if let IpAddress::Ipv4(address) = address {
+            output[len] = *address;
+            len += 1;
+        }
     }
     Ok(len)
 }
 
 #[cfg(test)]
 mod tests {
-    use core::net::Ipv4Addr;
+    use core::net::{Ipv4Addr, Ipv6Addr};
 
     use embassy_net::{IpAddress, Ipv4Cidr, StaticConfigV4};
 
@@ -209,6 +214,18 @@ mod tests {
             two,
             [Ipv4Addr::new(192, 0, 2, 1), Ipv4Addr::new(192, 0, 2, 2)]
         );
+    }
+
+    #[test]
+    fn dns_copy_ignores_ipv6_when_both_protocol_features_are_enabled() {
+        let addresses = [
+            IpAddress::Ipv6(Ipv6Addr::LOCALHOST),
+            IpAddress::Ipv4(Ipv4Addr::new(192, 0, 2, 1)),
+        ];
+        let mut output = [Ipv4Addr::UNSPECIFIED; 1];
+
+        assert_eq!(copy_ipv4_addresses(&addresses, &mut output), Ok(1));
+        assert_eq!(output, [Ipv4Addr::new(192, 0, 2, 1)]);
     }
 
     #[test]

@@ -13,9 +13,12 @@ The workspace contains two MQTT packages:
 
 The adapter supports fresh and resumed sessions, QoS 0/1 publish, subscribe,
 unsubscribe, receive, cooperative keepalive polling, graceful disconnect, and
-explicit capacity failures. Blocking protocol waits are cancellation-safe;
-the composing application must still apply transport deadlines and external
-wall-clock timeouts.
+explicit capacity failures. Blocking protocol waits are cancellation-safe when
+the underlying transport operations are cancellation-safe. QoS 0 publish is the
+exception: cancelling it poisons the connection because part of its unretained
+packet may already have reached the stream. Drop that connection and reconnect
+before performing another MQTT operation. The composing application must still
+apply transport deadlines and external wall-clock timeouts.
 
 QoS 2, topic aliases, request/reply services, multiple product subscriptions,
 provider topic layouts, and a persistent outbound queue are not exposed by

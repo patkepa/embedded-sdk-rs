@@ -22,7 +22,7 @@ pub type StationInterface<'d> = Interface<'d>;
 pub enum Error {
     /// The station SSID cannot be represented by the current ESP driver API.
     NonUtf8StationSsid,
-    /// A discovered SSID could not be represented by the portable contract.
+    /// A driver-reported SSID was not complete UTF-8 and could not be represented exactly.
     InvalidDiscoveredSsid,
     /// The portable authentication mode is not supported by this adapter version.
     UnsupportedAuthentication,
@@ -84,17 +84,28 @@ impl<'d> Esp32c6Wifi<'d> {
     }
 
     /// Performs an active scan and returns at most `maximum_results` APs.
+    ///
+    /// The pinned ESP driver temporarily collects its complete result set before
+    /// this adapter applies the bound.
     pub async fn scan(&mut self, maximum_results: usize) -> Result<Vec<AccessPoint>, Error> {
         self.state = WifiState::Scanning;
         let scan_config = ScanConfig::default().with_max(maximum_results);
         let result = self.controller.scan_async(&scan_config).await;
 
         match result {
-            Ok(discovered) => {
+            Ok(mut discovered) => {
+                // esp-radio 0.18 currently ignores `ScanConfig::max`, so enforce
+                // this adapter's result bound before allocating the portable list.
+                discovered.truncate(maximum_results);
                 let mut access_points = Vec::with_capacity(discovered.len());
                 for access_point in discovered {
-                    let ssid = Ssid::try_from(access_point.ssid.as_str())
-                        .map_err(|_| Error::InvalidDiscoveredSsid)?;
+                    let ssid = match map_driver_ssid(&access_point.ssid) {
+                        Ok(ssid) => ssid,
+                        Err(error) => {
+                            self.state = WifiState::Ready;
+                            return Err(error);
+                        }
+                    };
                     access_points.push(AccessPoint {
                         ssid,
                         bssid: access_point.bssid,
@@ -167,8 +178,7 @@ impl Esp32c6StationController<'_> {
             Ok(connected) => {
                 self.state = WifiState::Connected;
                 Ok(ConnectedStation {
-                    ssid: Ssid::try_from(connected.ssid.as_str())
-                        .map_err(|_| Error::InvalidDiscoveredSsid)?,
+                    ssid: map_driver_ssid(&connected.ssid)?,
                     bssid: connected.bssid,
                     channel: connected.channel,
                     security: map_security(Some(connected.authmode)),
@@ -194,6 +204,14 @@ impl Esp32c6StationController<'_> {
             }
         }
     }
+}
+
+fn map_driver_ssid(ssid: &esp_radio::wifi::Ssid) -> Result<Ssid, Error> {
+    let text = ssid.as_str();
+    if text.len() != ssid.len() {
+        return Err(Error::InvalidDiscoveredSsid);
+    }
+    Ssid::try_from(text).map_err(|_| Error::InvalidDiscoveredSsid)
 }
 
 fn map_authentication(authentication: Authentication) -> Result<AuthenticationMethod, Error> {

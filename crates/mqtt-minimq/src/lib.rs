@@ -201,6 +201,7 @@ impl<'buf> Client<'buf> {
             return Err(AdapterConfigError::CredentialsRequireEncryption);
         }
 
+        let rx = &mut rx[..required];
         let mut builder = ConfigBuilder::new(Buffers::new(rx, tx))
             .client_id(config.client_id().as_str())?
             .keepalive_interval(config.keep_alive_seconds())
@@ -259,7 +260,11 @@ impl<'buf> Client<'buf> {
                     ConnectEvent::Connected => snapshot.record_connected(),
                     ConnectEvent::Reconnected => snapshot.record_resumed(),
                 }
-                Ok(Connection { inner, snapshot })
+                Ok(Connection {
+                    inner,
+                    snapshot,
+                    poisoned: false,
+                })
             }
             Err(error) => {
                 let error = Error::from(error);
@@ -303,6 +308,28 @@ impl<'a> InboundPublish<'a> {
 pub struct Connection<'a, 'buf, IO> {
     inner: minimq::Connection<'a, 'buf, IO>,
     snapshot: &'a mut Snapshot,
+    poisoned: bool,
+}
+
+struct CancelGuard<'a> {
+    poisoned: &'a mut bool,
+    snapshot: &'a mut Snapshot,
+    completed: bool,
+}
+
+impl CancelGuard<'_> {
+    fn complete(&mut self) {
+        self.completed = true;
+    }
+}
+
+impl Drop for CancelGuard<'_> {
+    fn drop(&mut self) {
+        if !self.completed {
+            *self.poisoned = true;
+            self.snapshot.record_failure(ErrorKind::Disconnected);
+        }
+    }
 }
 
 impl<IO: Io> Connection<'_, '_, IO> {
@@ -321,7 +348,7 @@ impl<IO: Io> Connection<'_, '_, IO> {
     /// Returns whether the connection is still live.
     #[must_use]
     pub fn is_connected(&self) -> bool {
-        self.inner.is_connected()
+        !self.poisoned && self.inner.is_connected()
     }
 
     /// Adds application-queue drops to the portable lifecycle counters.
@@ -330,19 +357,46 @@ impl<IO: Io> Connection<'_, '_, IO> {
     }
 
     /// Publishes bytes at QoS 0 or QoS 1.
+    ///
+    /// Cancelling a QoS 0 publish poisons this handle because an unretained
+    /// packet may have been partially written. Drop the handle and reconnect
+    /// before performing another operation. QoS 1 retains its packet and is
+    /// cancellation-safe when the underlying transport writes are.
     pub async fn publish(
         &mut self,
         topic: &TopicName,
         payload: &[u8],
         qos: QoS,
     ) -> Result<(), Error<IO::Error>> {
+        if self.poisoned {
+            return Err(Error::Disconnected);
+        }
         let publication = Publication::bytes(topic.as_str(), payload).qos(to_minimq_qos(qos));
-        match self.inner.publish(publication).await {
+        let Connection {
+            inner,
+            snapshot,
+            poisoned,
+        } = self;
+        let mut cancellation = (qos == QoS::AtMostOnce).then(|| CancelGuard {
+            poisoned,
+            snapshot,
+            completed: false,
+        });
+        let result = inner.publish(publication).await;
+        if let Some(guard) = cancellation.as_mut() {
+            guard.complete();
+        }
+        drop(cancellation);
+        match result {
             Ok(_) => {
-                self.snapshot.record_publish();
+                snapshot.record_publish();
                 Ok(())
             }
-            Err(PubError::Session(error)) => Err(self.observe(error.into())),
+            Err(PubError::Session(error)) => {
+                let error = Error::from(error);
+                observe_error(snapshot, &error);
+                Err(error)
+            }
             Err(PubError::Payload(())) => Err(Error::PayloadTooLarge),
         }
     }
@@ -353,6 +407,9 @@ impl<IO: Io> Connection<'_, '_, IO> {
         filter: &TopicFilter,
         qos: QoS,
     ) -> Result<(), Error<IO::Error>> {
+        if self.poisoned {
+            return Err(Error::Disconnected);
+        }
         let options = SubscriptionOptions::default().maximum_qos(to_minimq_qos(qos));
         let filter = minimq::TopicFilter::new(filter.as_str()).options(options);
         self.inner
@@ -364,6 +421,9 @@ impl<IO: Io> Connection<'_, '_, IO> {
 
     /// Unsubscribes from one validated topic filter.
     pub async fn unsubscribe(&mut self, filter: &TopicFilter) -> Result<(), Error<IO::Error>> {
+        if self.poisoned {
+            return Err(Error::Disconnected);
+        }
         self.inner
             .unsubscribe(&[filter.as_str()], &[])
             .await
@@ -376,7 +436,12 @@ impl<IO: Io> Connection<'_, '_, IO> {
     /// This method does not wait for future reads. Wrap it in an external timeout
     /// if the underlying transport can stall writes or flushes.
     pub async fn drive(&mut self) -> Result<Option<InboundPublish<'_>>, Error<IO::Error>> {
-        let Connection { inner, snapshot } = self;
+        if self.poisoned {
+            return Err(Error::Disconnected);
+        }
+        let Connection {
+            inner, snapshot, ..
+        } = self;
         match inner.drive().await {
             Ok(Some(message)) => {
                 let message = from_minimq_publish(message).ok_or_else(|| {
@@ -401,7 +466,12 @@ impl<IO: Io> Connection<'_, '_, IO> {
     /// This wait is cancellation-safe; callers remain responsible for an
     /// external wall-clock timeout and transport-level I/O deadlines.
     pub async fn receive(&mut self) -> Result<InboundPublish<'_>, Error<IO::Error>> {
-        let Connection { inner, snapshot } = self;
+        if self.poisoned {
+            return Err(Error::Disconnected);
+        }
+        let Connection {
+            inner, snapshot, ..
+        } = self;
         match inner.recv().await {
             Ok(message) => {
                 let message = from_minimq_publish(message).ok_or_else(|| {
@@ -422,6 +492,9 @@ impl<IO: Io> Connection<'_, '_, IO> {
 
     /// Sends MQTT DISCONNECT and marks the handle closed.
     pub async fn disconnect(&mut self) -> Result<(), Error<IO::Error>> {
+        if self.poisoned {
+            return Err(Error::Disconnected);
+        }
         match self.inner.disconnect().await {
             Ok(()) => {
                 self.snapshot
@@ -549,6 +622,56 @@ mod tests {
         }
     }
 
+    struct StallingPublishIo {
+        rx: VecDeque<u8>,
+        handshake_complete: bool,
+        publish_started: bool,
+    }
+
+    impl StallingPublishIo {
+        fn new() -> Self {
+            Self {
+                rx: [0x20, 0x03, 0x00, 0x00, 0x00].into_iter().collect(),
+                handshake_complete: false,
+                publish_started: false,
+            }
+        }
+    }
+
+    impl ErrorType for StallingPublishIo {
+        type Error = IoErrorKind;
+    }
+
+    impl Read for StallingPublishIo {
+        async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+            let Some(byte) = self.rx.pop_front() else {
+                return core::future::pending().await;
+            };
+            buffer[0] = byte;
+            if self.rx.is_empty() {
+                self.handshake_complete = true;
+            }
+            Ok(1)
+        }
+    }
+
+    impl Write for StallingPublishIo {
+        async fn write(&mut self, buffer: &[u8]) -> Result<usize, Self::Error> {
+            if !self.handshake_complete {
+                return Ok(buffer.len());
+            }
+            if !self.publish_started {
+                self.publish_started = true;
+                return Ok(1);
+            }
+            core::future::pending().await
+        }
+
+        async fn flush(&mut self) -> Result<(), Self::Error> {
+            Ok(())
+        }
+    }
+
     fn config(maximum_packet_size: u32) -> Config {
         Config::new(
             BrokerHostname::new("broker.example.test").unwrap(),
@@ -597,6 +720,56 @@ mod tests {
                 required: 64,
                 available: 63
             })
+        ));
+    }
+
+    #[test]
+    fn limits_rx_to_the_configured_packet_size() {
+        let mut rx = [0; 128];
+        let mut tx = [0; 128];
+        let client = Client::new(
+            &config(64),
+            &mut rx,
+            &mut tx,
+            TransportSecurity::PlaintextFixture,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(client.rx_capacity(), 64);
+    }
+
+    #[test]
+    fn cancelling_qos_zero_publish_poisons_the_connection() {
+        let mut rx = [0; 64];
+        let mut tx = [0; 128];
+        let mut client = Client::new(
+            &config(64),
+            &mut rx,
+            &mut tx,
+            TransportSecurity::PlaintextFixture,
+            None,
+        )
+        .unwrap();
+        let mut connection = block_on(client.connect(StallingPublishIo::new())).unwrap();
+        let topic = TopicName::new("out").unwrap();
+
+        {
+            let mut publish =
+                std::pin::pin!(connection.publish(&topic, b"partially written", QoS::AtMostOnce));
+            let mut context = Context::from_waker(Waker::noop());
+            assert!(matches!(publish.as_mut().poll(&mut context), Poll::Pending));
+        }
+
+        assert!(!connection.is_connected());
+        assert_eq!(connection.snapshot().state, ConnectionState::BackingOff);
+        assert_eq!(
+            connection.snapshot().last_error,
+            Some(ErrorKind::Disconnected)
+        );
+        assert!(matches!(
+            block_on(connection.publish(&topic, b"next", QoS::AtLeastOnce)),
+            Err(super::Error::Disconnected)
         ));
     }
 

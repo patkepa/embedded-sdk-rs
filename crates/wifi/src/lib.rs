@@ -20,7 +20,7 @@ pub enum ConfigError {
     SsidTooLong,
     /// A WPA passphrase must be 8 through 63 bytes, or a 64-digit hexadecimal PSK.
     InvalidPassphrase,
-    /// Reconnection delays must be non-zero, ordered, and keep jitter below the maximum.
+    /// Reconnection delays must be non-zero, ordered, and leave room for jitter.
     InvalidReconnectPolicy,
 }
 
@@ -32,7 +32,7 @@ impl fmt::Display for ConfigError {
             Self::InvalidPassphrase => formatter
                 .write_str("WPA passphrase must be 8-63 bytes, or a 64-digit hexadecimal PSK"),
             Self::InvalidReconnectPolicy => formatter
-                .write_str("reconnect policy requires 0 < initial <= maximum and jitter < maximum"),
+                .write_str("reconnect policy requires 0 < initial and initial + jitter <= maximum"),
         }
     }
 }
@@ -352,8 +352,7 @@ impl ReconnectPolicy {
         maximum_jitter_ms: u32,
     ) -> Result<Self, ConfigError> {
         if initial_delay_ms == 0
-            || initial_delay_ms > maximum_delay_ms
-            || maximum_jitter_ms >= maximum_delay_ms
+            || initial_delay_ms > maximum_delay_ms.saturating_sub(maximum_jitter_ms)
         {
             return Err(ConfigError::InvalidReconnectPolicy);
         }
@@ -539,6 +538,10 @@ mod tests {
         );
         assert_eq!(
             ReconnectPolicy::new(1_000, 1_000, 1_000),
+            Err(ConfigError::InvalidReconnectPolicy)
+        );
+        assert_eq!(
+            ReconnectPolicy::new(1_000, 1_000, 999),
             Err(ConfigError::InvalidReconnectPolicy)
         );
     }

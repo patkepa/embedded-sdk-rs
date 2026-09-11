@@ -11,5 +11,8 @@ repository.workspace = true
 embassy-net.workspace = true
 embedded-sdk-networking.workspace = true
 
+[dev-dependencies]
+embassy-net = { workspace = true, features = ["proto-ipv6"] }
+
 [lints]
 workspace = true
