@@ -1,10 +1,13 @@
 # Beetle ESP32-C6 Wi-Fi scanner HIL
 
 Status: **partial**. On 2026-09-14, a connected ESP32-C6 Beetle was flashed
-with the scanner and verified to capture/report channel windows. An earlier USB
-bridge path delivered scan data to the backend, but the current direct MQTT path
-still requires a network-configured hardware run. The remaining controlled
-RF comparisons and long-duration checks below have not been run. They require
+with the scanner and verified to capture/report channel windows. With direct
+MQTT enabled, it completed two consecutive 13-channel sweeps, associated to the
+AP after each, and sent all 26 window summaries through the broker to the
+collector. The Grafana SQLite query showed 26 new accepted messages (205 to
+231). Scanning resumed after each upload. The remaining controlled RF
+comparisons and long-duration checks
+below have not been run. They require
 a DFR1117 Beetle, USB host, controlled 2.4 GHz AP,
 an IoT client, and ideally an independent monitor capture for comparison.
 
@@ -28,7 +31,7 @@ an IoT client, and ideally an independent monitor capture for comparison.
 7. Run for at least 24 hours. Check timestamp wrap handling, heap stability,
    watchdog resets, USB stalls and correct report/window separation.
 8. Configure direct MQTT, complete a 13-window sweep, and confirm association,
-   DHCP, broker acknowledgements, collector samples, and Grafana panels without
+   DHCP, collector samples, and Grafana panels without
    a host bridge. Check that scanning resumes and the next capture gap includes
    upload time. Repeat with the broker unavailable to confirm bounded recovery.
 

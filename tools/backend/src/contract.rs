@@ -33,6 +33,9 @@ pub struct Metric {
     pub key: String,
     /// Panel title.
     pub title: String,
+    /// Short explanation shown in the Grafana panel tooltip.
+    #[serde(default)]
+    pub description: String,
     /// JSON Pointer to a number in the payload, e.g. `/temperature_c`.
     pub pointer: String,
     /// Grafana unit identifier, e.g. `celsius`, `dBm`, or `none`.

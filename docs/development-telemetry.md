@@ -75,6 +75,7 @@ For example, a sensor firmware could own this contract:
     {
       "key": "temperature",
       "title": "Temperature",
+      "description": "Ambient temperature measured at the sensor.",
       "pointer": "/temperature_c",
       "unit": "celsius"
     },
@@ -108,7 +109,8 @@ message; refresh the dashboard/time range to refresh the selector.
 - The collector timestamps arrival in UTC milliseconds. It does not interpret
   device uptime as wall-clock time. Grafana displays local time.
 - Metric graphs average into Grafana's chosen time buckets; raw samples remain
-  available in SQLite. Units use Grafana unit IDs.
+  available in SQLite. Units use Grafana unit IDs. Optional metric descriptions
+  appear in panel tooltips and should explain the measurement and its limits.
 - Give incompatible schemas a new contract ID and versioned topic. Old data
   remains until retention expires; keep the old contract registered if its
   dashboard must remain available.

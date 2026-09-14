@@ -8,7 +8,9 @@ use embassy_net::{
     Config as NetworkConfig, IpAddress, IpEndpoint, Runner, StackResources, tcp::TcpSocket,
 };
 use embassy_time::{Duration, with_timeout};
-use embedded_sdk_mqtt::{BrokerHostname, BrokerPort, ClientId, Config as MqttConfig, TopicName};
+use embedded_sdk_mqtt::{
+    BrokerHostname, BrokerPort, ClientId, Config as MqttConfig, QoS, TopicName,
+};
 use embedded_sdk_mqtt_minimq::{Client as MqttClient, TransportSecurity};
 use embedded_sdk_networking_embassy_net::EmbassyNetwork;
 use embedded_sdk_wifi::diagnostics::Analyzer;
@@ -28,13 +30,19 @@ const BATCH_TIMEOUT: Duration = Duration::from_secs(60);
 pub struct Settings {
     ssid: &'static str,
     password: &'static str,
+    station_channel: Option<u8>,
+    station_bssid: Option<[u8; 6]>,
     broker_ip: Ipv4Addr,
     session: MqttConfig,
     topic: TopicName,
 }
 
 impl Settings {
-    pub fn from_env() -> Result<Option<Self>, &'static str> {
+    pub fn device_id(&self) -> &str {
+        self.session.client_id().as_str()
+    }
+
+    pub fn from_env(station_mac: [u8; 6]) -> Result<Option<Self>, &'static str> {
         let ssid = option_env!("WIFI_SSID");
         let password = option_env!("WIFI_PASSWORD");
         let host = option_env!("MQTT_HOST");
@@ -42,11 +50,8 @@ impl Settings {
         if ssid.is_none() && password.is_none() && host.is_none() && client.is_none() {
             return Ok(None);
         }
-        let (Some(ssid), Some(password), Some(host), Some(client)) = (ssid, password, host, client)
-        else {
-            return Err(
-                "WIFI_SSID, WIFI_PASSWORD, MQTT_HOST and MQTT_CLIENT_ID must be set together",
-            );
+        let (Some(ssid), Some(password), Some(host)) = (ssid, password, host) else {
+            return Err("WIFI_SSID, WIFI_PASSWORD and MQTT_HOST must be set together");
         };
         if ssid.is_empty() || ssid.len() > 32 || !(8..=63).contains(&password.len()) {
             return Err("invalid Wi-Fi SSID or WPA passphrase length");
@@ -54,6 +59,19 @@ impl Settings {
         if option_env!("MQTT_PLAINTEXT_FIXTURE") != Some("1") {
             return Err("set MQTT_PLAINTEXT_FIXTURE=1 for the local plaintext broker");
         }
+        let mut generated = Line::new();
+        write!(
+            generated,
+            "beetle-esp32c6-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            station_mac[0],
+            station_mac[1],
+            station_mac[2],
+            station_mac[3],
+            station_mac[4],
+            station_mac[5]
+        )
+        .map_err(|_| "generated MQTT_CLIENT_ID is too long")?;
+        let client = client.unwrap_or(generated.as_str());
         if !(1..=32).contains(&client.len())
             || !client
                 .bytes()
@@ -64,6 +82,14 @@ impl Settings {
         let broker_ip = host
             .parse::<Ipv4Addr>()
             .map_err(|_| "MQTT_HOST must be the backend computer's IPv4 address")?;
+        let station_channel = option_env!("WIFI_CHANNEL")
+            .map(|channel| channel.parse::<u8>())
+            .transpose()
+            .map_err(|_| "WIFI_CHANNEL must be a channel from 1 to 13")?;
+        if station_channel.is_some_and(|channel| !(1..=13).contains(&channel)) {
+            return Err("WIFI_CHANNEL must be a channel from 1 to 13");
+        }
+        let station_bssid = option_env!("WIFI_BSSID").map(parse_bssid).transpose()?;
         let port = option_env!("MQTT_PORT")
             .unwrap_or("1883")
             .parse::<u16>()
@@ -84,6 +110,8 @@ impl Settings {
         Ok(Some(Self {
             ssid,
             password,
+            station_channel,
+            station_bssid,
             broker_ip,
             session,
             topic,
@@ -94,14 +122,31 @@ impl Settings {
         &self,
         controller: &mut WifiController<'_>,
     ) -> Result<(), esp_radio::wifi::WifiError> {
-        controller.set_config(&Config::Station(
-            StationConfig::default()
-                .with_ssid(self.ssid)
-                .with_password(self.password.into())
-                .with_scan_method(ScanMethod::AllChannels)
-                .with_auth_method(AuthenticationMethod::Wpa2Personal),
-        ))
+        let mut station = StationConfig::default()
+            .with_ssid(self.ssid)
+            .with_password(self.password.into())
+            .with_scan_method(ScanMethod::AllChannels)
+            .with_auth_method(AuthenticationMethod::Wpa2Personal);
+        if let Some(channel) = self.station_channel {
+            station = station.with_channel(channel);
+        }
+        if let Some(bssid) = self.station_bssid {
+            station = station.with_bssid(bssid);
+        }
+        controller.set_config(&Config::Station(station))
     }
+}
+
+fn parse_bssid(value: &str) -> Result<[u8; 6], &'static str> {
+    if value.len() != 12 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("WIFI_BSSID must be 12 hexadecimal digits");
+    }
+    let mut bssid = [0; 6];
+    for (index, byte) in bssid.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)
+            .map_err(|_| "WIFI_BSSID must be 12 hexadecimal digits")?;
+    }
+    Ok(bssid)
 }
 
 pub struct Line {
@@ -181,7 +226,8 @@ async fn network_runner(mut runner: Runner<'static, Interface<'static>>) {
 }
 
 pub fn start_network(spawner: &Spawner, station: Interface<'static>) -> EmbassyNetwork<'static> {
-    static RESOURCES: StaticCell<StackResources<2>> = StaticCell::new();
+    // DHCP occupies a socket slot; leave room for the MQTT TCP connection.
+    static RESOURCES: StaticCell<StackResources<4>> = StaticCell::new();
     let rng = Rng::new();
     let seed = (u64::from(rng.random()) << 32) | u64::from(rng.random());
     let (stack, runner) = embassy_net::new(
@@ -287,15 +333,13 @@ pub async fn upload(
             };
             match with_timeout(
                 OPERATION_TIMEOUT,
-                connection.publish_confirmed(&settings.topic, payload),
+                connection.publish(&settings.topic, payload, QoS::AtMostOnce),
             )
             .await
             {
-                Ok(Ok(())) => esp_println::println!(
-                    "telemetry MQTT acknowledged {}/{}",
-                    index + 1,
-                    batch.count
-                ),
+                Ok(Ok(())) => {
+                    esp_println::println!("telemetry MQTT sent {}/{}", index + 1, batch.count)
+                }
                 other => {
                     esp_println::println!("telemetry MQTT publish failed: {other:?}");
                     return false;

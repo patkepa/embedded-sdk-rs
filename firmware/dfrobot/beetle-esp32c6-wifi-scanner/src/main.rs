@@ -176,7 +176,8 @@ async fn main(spawner: Spawner) {
         .set_power_saving(PowerSaveMode::None)
         .expect("disable modem sleep");
     interfaces.sniffer.set_receive_cb(receive);
-    let mqtt = telemetry::Settings::from_env().expect("invalid telemetry settings");
+    let mqtt = telemetry::Settings::from_env(interfaces.station.mac_address())
+        .expect("invalid telemetry settings");
     let network = mqtt.as_ref().map(|settings| {
         settings
             .configure_station(&mut controller)
@@ -184,6 +185,9 @@ async fn main(spawner: Spawner) {
         telemetry::start_network(&spawner, interfaces.station)
     });
     let mut buffers = network.map(|_| telemetry::buffers());
+    if let Some(settings) = mqtt.as_ref() {
+        esp_println::println!("telemetry device: {}", settings.device_id());
+    }
     esp_println::println!(
         "direct MQTT telemetry: {}",
         if mqtt.is_some() {

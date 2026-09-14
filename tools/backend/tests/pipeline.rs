@@ -20,6 +20,7 @@ fn contract() -> Contract {
         metrics: vec![Metric {
             key: "temperature".into(),
             title: "Temperature".into(),
+            description: "Ambient temperature at the sensor".into(),
             pointer: "/readings/temperature".into(),
             unit: "celsius".into(),
             required: true,
@@ -178,6 +179,107 @@ fn collection_is_atomic_persistent_and_queries_work() {
         0
     );
     drop(reader);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn scanner_dashboard_keeps_batched_channels_separate_and_explains_panels() {
+    let contract: Contract = serde_json::from_str(include_str!(
+        "../../../firmware/dfrobot/beetle-esp32c6-wifi-scanner/telemetry.json"
+    ))
+    .unwrap();
+    contract.validate().unwrap();
+    let path = std::env::temp_dir().join(format!(
+        "sdk-scanner-dashboard-{}-{}.sqlite",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut store = Store::open(&path).unwrap();
+    for (channel, frames) in [(1, 100), (6, 200)] {
+        let mut payload = contract.example.clone();
+        payload["channel"] = json!(channel);
+        payload["frames"] = json!(frames);
+        assert!(
+            store
+                .ingest(
+                    &[contract.clone()],
+                    "embedded-sdk/beetle-wifi-scan/v1/scanner-a/telemetry",
+                    &serde_json::to_vec(&payload).unwrap(),
+                    5_000,
+                )
+                .unwrap()
+        );
+    }
+    let dashboard = dashboard(&contract);
+    let panels = dashboard["panels"].as_array().unwrap();
+    assert_eq!(panels[0]["title"], "Recent scan windows");
+    assert_eq!(panels[0]["gridPos"]["w"], 24);
+    assert!(
+        panels
+            .iter()
+            .all(|panel| panel["description"].as_str().is_some_and(|s| !s.is_empty()))
+    );
+    let reader = Connection::open(&path).unwrap();
+    for panel in panels {
+        let query = panel["targets"][0]["rawQueryText"]
+            .as_str()
+            .unwrap()
+            .replace("${device:sqlstring}", "'scanner-a'")
+            .replace("${__from}", "0")
+            .replace("${__to}", "10000")
+            .replace("${__interval_ms}", "1000");
+        let mut statement = reader.prepare(&query).unwrap();
+        statement.query([]).unwrap().next().unwrap();
+    }
+    let frames_panel = panels
+        .iter()
+        .find(|panel| panel["title"] == "Captured frames per window")
+        .unwrap();
+    let query = frames_panel["targets"][0]["rawQueryText"]
+        .as_str()
+        .unwrap()
+        .replace("${device:sqlstring}", "'scanner-a'")
+        .replace("${__from}", "0")
+        .replace("${__to}", "10000")
+        .replace("${__interval_ms}", "1000");
+    let series: Vec<(String, f64)> = reader
+        .prepare(&query)
+        .unwrap()
+        .query_map([], |row| Ok((row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(
+        series,
+        [
+            ("scanner-a ch 1".into(), 100.0),
+            ("scanner-a ch 6".into(), 200.0)
+        ]
+    );
+    let rate_panel = panels
+        .iter()
+        .find(|panel| panel["title"] == "Captured frames/s")
+        .unwrap();
+    let query = rate_panel["targets"][0]["rawQueryText"]
+        .as_str()
+        .unwrap()
+        .replace("${device:sqlstring}", "'scanner-a'")
+        .replace("${__from}", "0")
+        .replace("${__to}", "10000")
+        .replace("${__interval_ms}", "1000");
+    let rates: Vec<f64> = reader
+        .prepare(&query)
+        .unwrap()
+        .query_map([], |row| row.get(2))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(rates, [20.0, 40.0]);
+    drop(reader);
+    drop(store);
     std::fs::remove_file(path).unwrap();
 }
 

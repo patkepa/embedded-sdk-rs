@@ -25,22 +25,35 @@ Wi-Fi network and the backend computer's LAN IPv4 address:
 cargo xtask telemetry
 WIFI_SSID='your-network' WIFI_PASSWORD='your-passphrase' \
 MQTT_HOST='192.168.1.20' MQTT_PORT='1883' \
-MQTT_CLIENT_ID='beetle-01' MQTT_PLAINTEXT_FIXTURE='1' \
+MQTT_PLAINTEXT_FIXTURE='1' \
   cargo xtask run beetle-esp32c6/wifi-scanner
 ```
 
 After 13 scan windows, the scanner disables capture, associates with the AP,
-gets an IPv4 address via DHCP, and publishes each summary at QoS 1 to
-`embedded-sdk/beetle-wifi-scan/v1/beetle-01/telemetry`. It waits for each broker
-acknowledgement, disconnects, and resumes scanning. This creates a measured
+gets an IPv4 address via DHCP, and publishes each summary at QoS 0 to
+`embedded-sdk/beetle-wifi-scan/v1/{device}/telemetry`. By default, `{device}`
+is `beetle-esp32c6-` followed by the station MAC in lowercase hex; no device
+name needs to be entered. `MQTT_CLIENT_ID` can override it for a fixture. The
+scanner flushes each message,
+disconnects, and resumes scanning. This creates a measured
 blind interval in the following window's `capture_gap_ms`. If association or
 delivery fails, the batch is dropped after a bounded attempt and scanning
 resumes; there is no persistent outbox. Open the **Beetle Wi-Fi scanner**
 dashboard in Grafana at <http://localhost:3000>. The backend timestamps receipt;
 scanner uptime remains a separate field. Only aggregate counts and signal values
 are published; SSIDs, BSSIDs, client MACs and event details stay in local logs.
+The dashboard starts with one row per recent scan window, then trends traffic,
+radio conditions and capture quality. Trend legends include the receive channel
+because a batched sweep can deliver several channels at almost the same time.
+Hover a panel's info icon for its measurement definition and limits; compare
+windows on the same channel and check observation duration before comparing
+frame counts. The captured-frames/s panel divides each window's frame count
+by its actual observation duration.
 The local broker uses plaintext MQTT on a trusted development LAN. The Wi-Fi
 password is compiled into the firmware image when supplied at build time.
+If an SSID has several APs, `WIFI_BSSID=A22A6F4A51F6` selects a specific AP;
+`WIFI_CHANNEL=9` can additionally specify its channel. Neither setting changes
+the 1–13 passive survey.
 
 Default survey mode visits channels **1 through 13**, dwelling five seconds on
 each. A full sweep takes at least 65 seconds plus report time. This discovers
