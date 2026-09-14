@@ -29,7 +29,6 @@ struct Cli {
 #[derive(Subcommand)]
 enum Task {
     /// Run the local MQTT -> SQLite -> Grafana telemetry stack.
-    #[command(visible_alias = "backend")]
     Telemetry {
         #[command(subcommand)]
         action: Option<telemetry::Action>,

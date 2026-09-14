@@ -6,8 +6,6 @@ Run the entire development stack from the workspace:
 cargo xtask telemetry
 ```
 
-`cargo xtask backend` remains available as an alias for `telemetry`.
-
 Requires Rust and running Docker with Compose v2. First startup downloads images
 and builds the Rust collector. The command validates every registered contract,
 generates dashboards, and returns when Mosquitto, the collector's MQTT
