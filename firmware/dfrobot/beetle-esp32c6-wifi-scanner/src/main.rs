@@ -212,6 +212,9 @@ async fn main(_spawner: Spawner) {
         };
         let dropped = DROPPED.load(Ordering::Relaxed);
         let gap = started.duration_since(report_end).as_millis();
+        analyzer
+            .write_telemetry(&mut serial, stopped.as_millis(), dropped, gap)
+            .expect("telemetry formatting");
         if verbose {
             analyzer.write_verbose_report(&mut serial, stopped.as_millis(), dropped, gap)
         } else {

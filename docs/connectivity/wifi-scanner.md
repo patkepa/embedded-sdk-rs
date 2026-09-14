@@ -2,8 +2,9 @@
 
 `beetle-esp32c6-wifi-scanner` turns a **DFRobot Beetle ESP32-C6 (DFR1117)**
 into a standalone passive observer for 2.4 GHz IoT Wi-Fi networks. It computes
-diagnostics locally and writes a delimited information block over USB serial.
-It needs no credentials or server. The board is distinct from the XIAO and
+diagnostics locally and writes a delimited information block plus one JSON
+telemetry line per capture window over USB serial. It needs no credentials or server
+for local use. The board is distinct from the XIAO and
 FireBeetle 2; the firmware does not drive XIAO antenna-switch pins.
 
 ## Build and use
@@ -15,6 +16,24 @@ cargo xtask run beetle-esp32c6/wifi-scanner
 
 The second command builds, flashes, and starts the serial monitor. The ELF is
 `target/riscv32imac-unknown-none-elf/release/beetle-esp32c6-wifi-scanner`.
+
+To graph live results, start the backend, flash the scanner, then run the USB
+bridge from another terminal (stop the serial monitor first so it releases the
+port):
+
+```sh
+cargo xtask telemetry
+cargo run -p beetle-wifi-bridge -- --port /dev/cu.usbmodem1201 --device beetle-01
+```
+
+The bridge publishes QoS 1 to
+`embedded-sdk/beetle-wifi-scan/v1/beetle-01/telemetry` and reconnects after a
+serial or broker interruption. Open the **Beetle Wi-Fi scanner** dashboard in
+Grafana at <http://localhost:3000>. The host timestamps receipt; scanner uptime
+remains a separate field. Only aggregate counts and signal values leave the
+USB connection; SSIDs, BSSIDs, client MACs and event details stay in local logs.
+The bridge must stay running to collect data. A scanner that is unplugged or a
+stopped bridge cannot backfill missed windows.
 
 Default survey mode visits channels **1 through 13**, dwelling five seconds on
 each. A full sweep takes at least 65 seconds plus report time. This discovers
@@ -154,8 +173,10 @@ cargo xtask build xiao-esp32c6
 
 User-provided hardware logs confirmed capture and reporting, and exposed a
 signed-byte decoding issue: raw RSSI 195 is -61 dBm, not +195 dBm. RSSI and
-noise now receive eight-bit sign extension before aggregation. Full hardware
-validation of the corrected firmware remains pending. Follow
+noise now receive eight-bit sign extension before aggregation. On 2026-09-14,
+the telemetry-enabled scanner was flashed to the connected Beetle, and live
+window messages reached MQTT, SQLite and Grafana. Controlled RF comparison
+and long-duration validation remain pending. Follow
 [the Beetle HIL procedure](../../tests/hil/beetle-esp32c6-wifi-scanner.md) before
 relying on it for field diagnosis.
 

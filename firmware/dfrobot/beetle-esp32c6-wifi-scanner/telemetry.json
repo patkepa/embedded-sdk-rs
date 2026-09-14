@@ -1,0 +1,32 @@
+{
+  "id": "beetle-wifi-scan-v1",
+  "title": "Beetle Wi-Fi scanner",
+  "version": 1,
+  "topic": "embedded-sdk/beetle-wifi-scan/v1/{device}/telemetry",
+  "equals": { "/kind": "wifi_scan" },
+  "metrics": [
+    { "key": "channel", "title": "Receive channel", "pointer": "/channel", "unit": "none" },
+    { "key": "frames", "title": "Captured frames per window", "pointer": "/frames", "unit": "short" },
+    { "key": "data_frames", "title": "Data frames per window", "pointer": "/data_frames", "unit": "short" },
+    { "key": "networks", "title": "Networks heard per window", "pointer": "/networks", "unit": "short" },
+    { "key": "active_radios", "title": "Active radios per window", "pointer": "/active_radios", "unit": "short" },
+    { "key": "rssi_avg_dbm", "title": "Average received signal", "pointer": "/rssi_avg_dbm", "unit": "dBm", "required": false },
+    { "key": "noise_avg_dbm", "title": "Raw noise floor", "pointer": "/noise_avg_dbm", "unit": "dBm", "required": false },
+    { "key": "retry_percent", "title": "Observed data retry fraction", "pointer": "/retry_percent", "unit": "percent", "required": false },
+    { "key": "capture_gap_ms", "title": "Capture gap before window", "pointer": "/capture_gap_ms", "unit": "ms" },
+    { "key": "queue_dropped", "title": "Queue drops per window", "pointer": "/queue_dropped", "unit": "short" },
+    { "key": "malformed", "title": "Malformed frames per window", "pointer": "/malformed", "unit": "short" },
+    { "key": "rx_errors", "title": "Delivered RX errors per window", "pointer": "/rx_errors", "unit": "short" },
+    { "key": "evictions", "title": "Table evictions per window", "pointer": "/evictions", "unit": "short" }
+  ],
+  "example": {
+    "version": 1, "kind": "wifi_scan", "uptime_ms": 5000, "channel": 1,
+    "observed_ms": 5000, "capture_gap_ms": 0, "frames": 100,
+    "bytes": 12000, "management_frames": 80, "data_frames": 20,
+    "data_retries": 2, "networks": 3, "active_radios": 5,
+    "queue_dropped": 0, "prefix_truncated": 0, "malformed": 0,
+    "rx_errors": 0, "off_window": 0, "evictions": 0,
+    "omitted_events": 0, "rssi_avg_dbm": -61,
+    "noise_avg_dbm": -95, "retry_percent": 10.0
+  }
+}

@@ -1,6 +1,11 @@
 # Beetle ESP32-C6 Wi-Fi scanner HIL
 
-Status: **not run**. Requires a DFR1117 Beetle, USB host, controlled 2.4 GHz AP,
+Status: **partial**. On 2026-09-14, a connected ESP32-C6 Beetle was flashed
+with the telemetry-enabled scanner. Its USB bridge published live channel
+windows to the local MQTT backend; the collector accepted them and Grafana's
+SQLite datasource returned messages for `beetle-01`. The remaining controlled
+RF comparisons and long-duration checks below have not been run. They require
+a DFR1117 Beetle, USB host, controlled 2.4 GHz AP,
 an IoT client, and ideally an independent monitor capture for comparison.
 
 1. Build and flash `beetle-esp32c6/wifi-scanner`. Confirm board boot metadata,

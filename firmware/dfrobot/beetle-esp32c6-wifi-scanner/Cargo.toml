@@ -11,6 +11,7 @@ publish = false
 [package.metadata.embedded-sdk.firmware]
 board = "beetle-esp32c6"
 variant = "wifi-scanner"
+telemetry-contract = "telemetry.json"
 
 [[bin]]
 name = "beetle-esp32c6-wifi-scanner"

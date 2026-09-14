@@ -8,6 +8,7 @@ members = [
     "tests/host",
     "tools/xtask",
     "tools/backend",
+    "tools/beetle-bridge",
 ]
 default-members = [
     "crates/embedded-sdk",
@@ -25,6 +26,7 @@ default-members = [
     "tests/host",
     "tools/xtask",
     "tools/backend",
+    "tools/beetle-bridge",
 ]
 
 [workspace.package]

@@ -47,8 +47,9 @@ The registered contract is
 It accepts `embedded-sdk/test/{device}/telemetry` with
 `{"version":1,"kind":"heartbeat"}`. Grafana shows message counts, last seen,
 recent payloads, and validation failures. This fixture contains no sensor values.
-The beacon and Wi-Fi scanner variants currently output via serial and are not
-MQTT producers; adding a contract alone does not add MQTT transport to them.
+The Beetle Wi-Fi scanner publishes through a USB serial-to-MQTT bridge; see the
+[scanner guide](connectivity/wifi-scanner.md). The beacon variants still output
+only over serial.
 
 ## Give another firmware its own contract
 

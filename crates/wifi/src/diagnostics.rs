@@ -141,6 +141,64 @@ pub struct Analyzer<const PEERS: usize, const APS: usize> {
 }
 
 impl<const PEERS: usize, const APS: usize> Analyzer<PEERS, APS> {
+    /// Writes one bounded JSON line for the USB telemetry bridge. Only aggregate
+    /// counts are exported; network and device identities stay in local logs.
+    pub fn write_telemetry(
+        &self,
+        out: &mut impl Write,
+        now_ms: u64,
+        dropped: u32,
+        gap_before_ms: u64,
+    ) -> fmt::Result {
+        let elapsed = now_ms.saturating_sub(self.started_ms).max(1);
+        let aps = self
+            .aps
+            .iter()
+            .flatten()
+            .filter(|ap| ap.channel == self.channel && ap.last_ms >= self.started_ms)
+            .count();
+        let peers = self
+            .peers
+            .iter()
+            .flatten()
+            .filter(|peer| {
+                peer.channel == self.channel && (peer.traffic.frames > 0 || peer.received > 0)
+            })
+            .count();
+        write!(
+            out,
+            "WIFI_TELEMETRY {{\"version\":1,\"kind\":\"wifi_scan\",\"uptime_ms\":{now_ms},\"channel\":{},\"observed_ms\":{elapsed},\"capture_gap_ms\":{gap_before_ms},\"frames\":{},\"bytes\":{},\"management_frames\":{},\"data_frames\":{},\"data_retries\":{},\"networks\":{aps},\"active_radios\":{peers},\"queue_dropped\":{dropped},\"prefix_truncated\":{},\"malformed\":{},\"rx_errors\":{},\"off_window\":{},\"evictions\":{},\"omitted_events\":{}",
+            self.channel,
+            self.traffic.frames,
+            self.traffic.bytes,
+            self.traffic.management,
+            self.traffic.data,
+            self.traffic.retries,
+            self.truncated,
+            self.malformed,
+            self.rx_errors,
+            self.other_channel,
+            self.evictions,
+            self.event_overflow
+        )?;
+        if let Some(rssi) = self.traffic.signal.average() {
+            write!(out, ",\"rssi_avg_dbm\":{rssi}")?;
+        }
+        if let Some(noise) = self.traffic.noise.average() {
+            write!(out, ",\"noise_avg_dbm\":{noise}")?;
+        }
+        if self.traffic.data > 0 {
+            let retry_pct = u64::from(self.traffic.retries) * 10000 / u64::from(self.traffic.data);
+            write!(
+                out,
+                ",\"retry_percent\":{}.{:02}",
+                retry_pct / 100,
+                retry_pct % 100
+            )?;
+        }
+        writeln!(out, "}}")
+    }
+
     /// Creates empty tables and an optional target MAC to highlight and retain.
     pub const fn new(target: Option<[u8; 6]>) -> Self {
         Self {
@@ -846,6 +904,26 @@ mod tests {
         let mut analyzer = Analyzer::new(Some(DEVICE));
         analyzer.begin_window(6, 0);
         analyzer
+    }
+
+    #[test]
+    fn telemetry_reports_window_counts_without_network_identity() {
+        let mut a = analyzer();
+        let bytes = frame(0x0908, &[]);
+        a.observe(&bytes, rx(&bytes, 10));
+        let mut line = String::new();
+        a.write_telemetry(&mut line, 5000, 2, 40).unwrap();
+        assert!(line.starts_with("WIFI_TELEMETRY {\"version\":1,\"kind\":\"wifi_scan\""));
+        assert!(line.contains("\"channel\":6"));
+        assert!(line.contains("\"frames\":1"));
+        assert!(line.contains("\"retry_percent\":100.00"));
+        assert!(line.contains("\"queue_dropped\":2"));
+        assert!(!line.contains("02:01:02:03:04:05"));
+        a.begin_window(6, 5000);
+        line.clear();
+        a.write_telemetry(&mut line, 10000, 0, 0).unwrap();
+        assert!(!line.contains("retry_percent"));
+        assert!(!line.contains("rssi_avg_dbm"));
     }
 
     #[test]
