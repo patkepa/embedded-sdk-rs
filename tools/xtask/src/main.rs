@@ -13,6 +13,8 @@ use serde::Deserialize;
 
 const METADATA_NAMESPACE: &str = "embedded-sdk";
 
+mod telemetry;
+
 #[derive(Parser)]
 #[command(
     name = "cargo xtask",
@@ -26,6 +28,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Task {
+    /// Run the local MQTT -> SQLite -> Grafana telemetry stack.
+    #[command(visible_alias = "backend")]
+    Telemetry {
+        #[command(subcommand)]
+        action: Option<telemetry::Action>,
+    },
     /// Build one release firmware image.
     Build {
         /// Firmware selector or Cargo package name.
@@ -231,6 +239,7 @@ fn main() -> ExitCode {
 
 fn execute(task: Task) -> Result<(), String> {
     match task {
+        Task::Telemetry { action } => telemetry::run(action),
         Task::Check => check(&Registry::discover()?),
         Task::Test => host_tests(&Registry::discover()?),
         Task::List => list(&Registry::discover()?),

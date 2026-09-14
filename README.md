@@ -30,6 +30,10 @@ plaintext local-fixture path in the XIAO firmware. It is not production support
 until the authenticated TLS and hardware validation gates pass. See the
 [MQTT guide](docs/connectivity/mqtt.md).
 
+Start the local MQTT → SQLite → Grafana development stack with
+`cargo xtask telemetry`. Firmware-owned contract files automatically configure
+collection and dashboards. See the [Development Telemetry Guide](docs/development-telemetry.md).
+
 A dedicated non-connectable iBeacon firmware is also available for the XIAO
 ESP32C6. See the [Beacon Guide](docs/connectivity/beacon.md) for deployment
 configuration, flashing, calibration, and production boundaries.

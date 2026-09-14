@@ -1,0 +1,9 @@
+{
+  "id": "xiao-heartbeat-v1",
+  "title": "XIAO ESP32C6 heartbeat",
+  "version": 1,
+  "topic": "embedded-sdk/test/{device}/telemetry",
+  "equals": { "/kind": "heartbeat" },
+  "metrics": [],
+  "example": { "version": 1, "kind": "heartbeat" }
+}

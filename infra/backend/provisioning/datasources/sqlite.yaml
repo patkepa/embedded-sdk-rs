@@ -1,0 +1,12 @@
+apiVersion: 1
+datasources:
+  - name: Embedded SDK
+    uid: embedded-sdk-sqlite
+    type: frser-sqlite-datasource
+    access: proxy
+    isDefault: true
+    editable: false
+    jsonData:
+      path: /data/telemetry.sqlite
+      pathOptions: mode=ro
+      attachLimit: 0

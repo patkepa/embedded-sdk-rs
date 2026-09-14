@@ -7,6 +7,7 @@ members = [
     "firmware/*/*",
     "tests/host",
     "tools/xtask",
+    "tools/backend",
 ]
 default-members = [
     "crates/embedded-sdk",
@@ -23,6 +24,7 @@ default-members = [
     "crates/wifi",
     "tests/host",
     "tools/xtask",
+    "tools/backend",
 ]
 
 [workspace.package]

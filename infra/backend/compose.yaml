@@ -1,0 +1,66 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+    ports:
+      - "${BACKEND_MQTT_BIND:-0.0.0.0}:${BACKEND_MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mqtt-data:/mosquitto/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "backend/health", "-n"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  collector:
+    build:
+      context: ../..
+      dockerfile: infra/backend/Dockerfile
+    environment:
+      RETENTION_DAYS: "${RETENTION_DAYS:-7}"
+      CONTRACT_REVISION: "${BACKEND_CONTRACT_REVISION:-local}"
+    volumes:
+      - ../../target/dev-backend/contracts:/contracts:ro
+      - telemetry-data:/data
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "collector", "--healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  grafana:
+    image: grafana/grafana:12.4.10
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_PLUGINS_PREINSTALL_SYNC: "frser-sqlite-datasource@3.8.2"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_BASIC_ENABLED: "true"
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: ""
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - telemetry-data:/data:ro
+      - ./provisioning:/etc/grafana/provisioning:ro
+      - ../../target/dev-backend/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      collector:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+volumes:
+  mqtt-data:
+  telemetry-data:
+  grafana-data:

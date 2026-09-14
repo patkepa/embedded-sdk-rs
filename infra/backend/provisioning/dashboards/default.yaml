@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: Embedded SDK contracts
+    orgId: 1
+    folder: Embedded SDK
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 5
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

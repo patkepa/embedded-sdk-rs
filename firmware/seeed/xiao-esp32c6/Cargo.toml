@@ -11,6 +11,7 @@ publish = false
 [package.metadata.embedded-sdk.firmware]
 board = "xiao-esp32c6"
 variant = "default"
+telemetry-contract = "telemetry.json"
 
 [[bin]]
 name = "xiao-esp32c6-firmware"
