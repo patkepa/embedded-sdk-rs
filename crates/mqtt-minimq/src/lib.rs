@@ -347,6 +347,32 @@ impl<IO: Io> Connection<'_, '_, IO> {
         }
     }
 
+    /// Publish and wait until the broker acknowledges a QoS 1 message.
+    /// This is useful before an application deliberately tears down its link.
+    pub async fn publish_confirmed(
+        &mut self,
+        topic: &TopicName,
+        payload: &[u8],
+    ) -> Result<(), Error<IO::Error>> {
+        let publication = Publication::bytes(topic.as_str(), payload).qos(minimq::QoS::AtLeastOnce);
+        let operation = match self.inner.publish(publication).await {
+            Ok(Some(operation)) => operation,
+            Ok(None) => return Err(Error::Backend),
+            Err(PubError::Session(error)) => return Err(self.observe(error.into())),
+            Err(PubError::Payload(())) => return Err(Error::PayloadTooLarge),
+        };
+        while self.inner.is_pending(&operation) {
+            if let Err(error) = self.inner.poll().await {
+                return Err(self.observe(error.into()));
+            }
+        }
+        if !self.inner.is_complete(&operation) {
+            return Err(self.observe(Error::Disconnected));
+        }
+        self.snapshot.record_publish();
+        Ok(())
+    }
+
     /// Subscribes to one validated topic filter at QoS 0 or QoS 1.
     pub async fn subscribe(
         &mut self,
@@ -626,6 +652,25 @@ mod tests {
         assert_eq!(inbound.topic(), "a");
         assert_eq!(inbound.payload(), b"x");
         assert_eq!(inbound.qos(), QoS::AtMostOnce);
+    }
+
+    #[test]
+    fn confirmed_publish_waits_for_qos_one_ack() {
+        // MQTT 5 CONNACK followed by PUBACK for the first outgoing packet.
+        let io = FragmentedIo::new(&[0x20, 0x03, 0x00, 0x00, 0x00, 0x40, 0x02, 0x00, 0x01]);
+        let mut rx = [0; 64];
+        let mut tx = [0; 256];
+        let mut client = Client::new(
+            &config(64),
+            &mut rx,
+            &mut tx,
+            TransportSecurity::PlaintextFixture,
+            None,
+        )
+        .unwrap();
+        let mut connection = block_on(client.connect(io)).unwrap();
+        block_on(connection.publish_confirmed(&TopicName::new("out").unwrap(), b"value")).unwrap();
+        assert_eq!(connection.snapshot().publishes, 1);
     }
 
     #[test]

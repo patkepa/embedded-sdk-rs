@@ -3,8 +3,9 @@
 `beetle-esp32c6-wifi-scanner` turns a **DFRobot Beetle ESP32-C6 (DFR1117)**
 into a standalone passive observer for 2.4 GHz IoT Wi-Fi networks. It computes
 diagnostics locally and writes a delimited information block plus one JSON
-telemetry line per capture window over USB serial. It needs no credentials or server
-for local use. The board is distinct from the XIAO and
+telemetry line per capture window over USB serial. With network settings, the
+Beetle also publishes those summaries directly to MQTT. It needs no credentials
+or server for local serial use. The board is distinct from the XIAO and
 FireBeetle 2; the firmware does not drive XIAO antenna-switch pins.
 
 ## Build and use
@@ -17,27 +18,35 @@ cargo xtask run beetle-esp32c6/wifi-scanner
 The second command builds, flashes, and starts the serial monitor. The ELF is
 `target/riscv32imac-unknown-none-elf/release/beetle-esp32c6-wifi-scanner`.
 
-To graph live results, start the backend, flash the scanner, then run the USB
-bridge from another terminal (stop the serial monitor first so it releases the
-port):
+To graph live results, start the backend and flash the scanner with a 2.4 GHz
+Wi-Fi network and the backend computer's LAN IPv4 address:
 
 ```sh
 cargo xtask telemetry
-cargo run -p beetle-wifi-bridge -- --port /dev/cu.usbmodem1201 --device beetle-01
+WIFI_SSID='your-network' WIFI_PASSWORD='your-passphrase' \
+MQTT_HOST='192.168.1.20' MQTT_PORT='1883' \
+MQTT_CLIENT_ID='beetle-01' MQTT_PLAINTEXT_FIXTURE='1' \
+  cargo xtask run beetle-esp32c6/wifi-scanner
 ```
 
-The bridge publishes QoS 1 to
-`embedded-sdk/beetle-wifi-scan/v1/beetle-01/telemetry` and reconnects after a
-serial or broker interruption. Open the **Beetle Wi-Fi scanner** dashboard in
-Grafana at <http://localhost:3000>. The host timestamps receipt; scanner uptime
-remains a separate field. Only aggregate counts and signal values leave the
-USB connection; SSIDs, BSSIDs, client MACs and event details stay in local logs.
-The bridge must stay running to collect data. A scanner that is unplugged or a
-stopped bridge cannot backfill missed windows.
+After 13 scan windows, the scanner disables capture, associates with the AP,
+gets an IPv4 address via DHCP, and publishes each summary at QoS 1 to
+`embedded-sdk/beetle-wifi-scan/v1/beetle-01/telemetry`. It waits for each broker
+acknowledgement, disconnects, and resumes scanning. This creates a measured
+blind interval in the following window's `capture_gap_ms`. If association or
+delivery fails, the batch is dropped after a bounded attempt and scanning
+resumes; there is no persistent outbox. Open the **Beetle Wi-Fi scanner**
+dashboard in Grafana at <http://localhost:3000>. The backend timestamps receipt;
+scanner uptime remains a separate field. Only aggregate counts and signal values
+are published; SSIDs, BSSIDs, client MACs and event details stay in local logs.
+The local broker uses plaintext MQTT on a trusted development LAN. The Wi-Fi
+password is compiled into the firmware image when supplied at build time.
 
 Default survey mode visits channels **1 through 13**, dwelling five seconds on
 each. A full sweep takes at least 65 seconds plus report time. This discovers
-APs and active devices without association or probe transmission. All 13 primary channels exposed by the driver are surveyed. No 5/6 GHz scan
+APs and active devices without association or probe transmission during capture.
+The optional telemetry upload associates and transmits after a sweep. All 13
+primary channels exposed by the driver are surveyed. No 5/6 GHz scan
 is possible.
 
 For a device that intermittently loses connectivity, find its AP's primary
@@ -57,7 +66,7 @@ does **not** restrict capture or automatically find/follow its channel.
 
 Place the scanner where it can receive both the IoT device and its AP. Reproduce
 the issue and correlate scanner timestamps with the device/AP logs. Channel
-lock avoids long survey absences, but USB report output still creates a measured
+lock avoids long survey absences, but report output and optional MQTT upload create a measured
 blind interval. Capture is disabled and the bounded queue drained before each
 report; `capture_gap_before_window_ms` inside the next block
 includes printing and channel-switch time.
@@ -157,7 +166,8 @@ the cause of a service failure.
 
 The callback copies at most 384 bytes into a 32-entry queue and increments an
 overflow counter; parsing and printing happen outside the callback. Memory is
-bounded: 96 KiB radio heap, fixed queue, and static analyzer tables. Busy-channel
+bounded: 96 KiB radio heap, fixed queue, static analyzer tables, and a 13-line
+telemetry batch. Busy-channel
 loss before callback delivery remains unknown even when queue drops are zero.
 
 ## Validation

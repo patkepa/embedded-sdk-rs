@@ -22,10 +22,15 @@ bench = false
 [dependencies]
 embassy-executor.workspace = true
 embassy-futures.workspace = true
+embassy-net.workspace = true
 embassy-sync.workspace = true
 embassy-time.workspace = true
+embedded-io-async.workspace = true
 static_cell.workspace = true
 embedded-sdk-board-beetle-esp32c6.workspace = true
+embedded-sdk-mqtt.workspace = true
+embedded-sdk-mqtt-minimq.workspace = true
+embedded-sdk-networking-embassy-net.workspace = true
 embedded-sdk-wifi.workspace = true
 esp-radio = { workspace = true, features = ["esp32c6", "esp-alloc", "wifi", "sniffer", "unstable"] }
 embedded-sdk-platform-esp32c6 = { workspace = true, features = ["wifi"] }

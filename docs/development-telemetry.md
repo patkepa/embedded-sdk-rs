@@ -47,7 +47,7 @@ The registered contract is
 It accepts `embedded-sdk/test/{device}/telemetry` with
 `{"version":1,"kind":"heartbeat"}`. Grafana shows message counts, last seen,
 recent payloads, and validation failures. This fixture contains no sensor values.
-The Beetle Wi-Fi scanner publishes through a USB serial-to-MQTT bridge; see the
+The Beetle Wi-Fi scanner publishes directly over Wi-Fi when configured; see the
 [scanner guide](connectivity/wifi-scanner.md). The beacon variants still output
 only over serial.
 

@@ -20,6 +20,8 @@ use esp_radio::wifi::{
 };
 use static_cell::StaticCell;
 
+mod telemetry;
+
 const PREFIX_BYTES: usize = 384;
 const QUEUE_SIZE: usize = 32;
 const DWELL: Duration = Duration::from_secs(5);
@@ -28,6 +30,7 @@ const APS: usize = 32;
 static QUEUE: Channel<CriticalSectionRawMutex, Capture, QUEUE_SIZE> = Channel::new();
 static DROPPED: AtomicU32 = AtomicU32::new(0);
 static ANALYZER: StaticCell<Analyzer<PEERS, APS>> = StaticCell::new();
+static PENDING: StaticCell<telemetry::Batch> = StaticCell::new();
 
 struct Capture {
     bytes: [u8; PREFIX_BYTES],
@@ -134,7 +137,7 @@ fn target_setting() -> Result<Option<[u8; 6]>, &'static str> {
 esp_bootloader_esp_idf::esp_app_desc!();
 
 #[esp_rtos::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     let peripherals = esp_hal::init(esp_hal::Config::default());
     esp_alloc::heap_allocator!(size: 96 * 1024);
     start_embassy(peripherals.TIMG0, peripherals.SW_INTERRUPT);
@@ -173,7 +176,24 @@ async fn main(_spawner: Spawner) {
         .set_power_saving(PowerSaveMode::None)
         .expect("disable modem sleep");
     interfaces.sniffer.set_receive_cb(receive);
+    let mqtt = telemetry::Settings::from_env().expect("invalid telemetry settings");
+    let network = mqtt.as_ref().map(|settings| {
+        settings
+            .configure_station(&mut controller)
+            .expect("configure telemetry station");
+        telemetry::start_network(&spawner, interfaces.station)
+    });
+    let mut buffers = network.map(|_| telemetry::buffers());
+    esp_println::println!(
+        "direct MQTT telemetry: {}",
+        if mqtt.is_some() {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
     let analyzer = ANALYZER.init(Analyzer::new(target));
+    let pending = PENDING.init_with(telemetry::Batch::new);
     let mut channel = locked.unwrap_or(1);
     let mut report_end = Instant::now();
     loop {
@@ -222,8 +242,18 @@ async fn main(_spawner: Spawner) {
         }
         .expect("serial formatting");
         serial.flush();
+        if mqtt.is_some() {
+            pending.push(analyzer, stopped.as_millis(), dropped, gap);
+        }
         // Include printing time in the next gap measurement.
         report_end = stopped;
+        if pending.is_full()
+            && let (Some(settings), Some(network), Some(buffers)) =
+                (mqtt.as_ref(), network, buffers.as_deref_mut())
+        {
+            telemetry::upload(&mut controller, network, settings, pending, buffers).await;
+            pending.clear();
+        }
         if locked.is_none() {
             channel = if channel == 13 { 1 } else { channel + 1 };
         }
