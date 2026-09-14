@@ -14,7 +14,8 @@ use embedded_sdk_networking_embassy_net::EmbassyNetwork;
 use embedded_sdk_wifi::diagnostics::Analyzer;
 use esp_hal::rng::Rng;
 use esp_radio::wifi::{
-    AuthenticationMethod, Config, Interface, WifiController, sta::StationConfig,
+    AuthenticationMethod, Config, Interface, WifiController,
+    sta::{ScanMethod, StationConfig},
 };
 use static_cell::StaticCell;
 
@@ -97,7 +98,8 @@ impl Settings {
             StationConfig::default()
                 .with_ssid(self.ssid)
                 .with_password(self.password.into())
-                .with_auth_method(AuthenticationMethod::Wpa2Wpa3Personal),
+                .with_scan_method(ScanMethod::AllChannels)
+                .with_auth_method(AuthenticationMethod::Wpa2Personal),
         ))
     }
 }
@@ -223,7 +225,7 @@ pub async fn upload(
     buffers: &mut Buffers,
 ) {
     let result = match with_timeout(BATCH_TIMEOUT, async {
-        match with_timeout(OPERATION_TIMEOUT, controller.connect_async()).await {
+        match with_timeout(Duration::from_secs(35), controller.connect_async()).await {
             Ok(Ok(info)) => {
                 esp_println::println!("telemetry Wi-Fi associated on channel {}", info.channel)
             }

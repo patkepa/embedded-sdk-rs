@@ -197,9 +197,13 @@ async fn main(spawner: Spawner) {
     let mut channel = locked.unwrap_or(1);
     let mut report_end = Instant::now();
     loop {
-        controller
-            .set_channel(channel, SecondaryChannel::None)
-            .expect("set capture channel");
+        if let Err(error) = controller.set_channel(channel, SecondaryChannel::None) {
+            // A canceled association may still be winding down in the driver.
+            // Keep the scanner alive and retry channel control after it settles.
+            esp_println::println!("capture channel {channel} unavailable: {error:?}; retrying");
+            Timer::after(Duration::from_secs(1)).await;
+            continue;
+        }
         let started = Instant::now();
         analyzer.begin_window(channel, started.as_millis());
         DROPPED.store(0, Ordering::Relaxed);
