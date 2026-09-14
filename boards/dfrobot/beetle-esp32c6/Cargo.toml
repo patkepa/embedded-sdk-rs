@@ -1,0 +1,20 @@
+[package]
+name = "embedded-sdk-board-beetle-esp32c6"
+description = "Board support metadata for DFRobot Beetle ESP32-C6 (DFR1117)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[package.metadata.embedded-sdk.board]
+id = "beetle-esp32c6"
+target = "riscv32imac-unknown-none-elf"
+runner = ["espflash", "flash", "--monitor"]
+
+[dependencies]
+embedded-sdk-core.workspace = true
+embedded-sdk-platform-esp32c6.workspace = true
+
+[lints]
+workspace = true

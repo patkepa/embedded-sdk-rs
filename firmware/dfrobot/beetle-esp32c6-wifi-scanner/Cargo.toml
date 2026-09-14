@@ -1,0 +1,48 @@
+[package]
+name = "beetle-esp32c6-wifi-scanner"
+description = "Passive Wi-Fi diagnostics for DFRobot Beetle ESP32-C6"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.embedded-sdk.firmware]
+board = "beetle-esp32c6"
+variant = "wifi-scanner"
+
+[[bin]]
+name = "beetle-esp32c6-wifi-scanner"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+embassy-executor.workspace = true
+embassy-futures.workspace = true
+embassy-sync.workspace = true
+embassy-time.workspace = true
+static_cell.workspace = true
+embedded-sdk-board-beetle-esp32c6.workspace = true
+embedded-sdk-wifi.workspace = true
+esp-radio = { workspace = true, features = ["esp32c6", "esp-alloc", "wifi", "sniffer", "unstable"] }
+embedded-sdk-platform-esp32c6 = { workspace = true, features = ["wifi"] }
+esp-alloc = { workspace = true, features = ["compat", "esp32c6", "global-allocator"] }
+esp-backtrace = { workspace = true, features = ["esp32c6", "panic-handler", "println"] }
+esp-bootloader-esp-idf = { workspace = true, features = ["esp32c6"] }
+esp-hal = { workspace = true, features = [
+    "esp32c6",
+    "exception-handler",
+    "rt",
+    "unstable",
+] }
+esp-println = { workspace = true, features = ["esp32c6"] }
+esp-rtos = { workspace = true, features = [
+    "embassy",
+    "esp-alloc",
+    "esp-radio",
+    "esp32c6",
+] }
+[lints]
+workspace = true

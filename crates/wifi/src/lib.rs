@@ -2,6 +2,9 @@
 #![forbid(unsafe_code)]
 #![doc = "Platform-independent Wi-Fi configuration and status types."]
 
+/// Passive 802.11 capture analysis and bounded diagnostic reports.
+pub mod diagnostics;
+
 use core::{fmt, str};
 use zeroize::Zeroize;
 

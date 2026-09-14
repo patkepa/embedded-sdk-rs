@@ -38,6 +38,11 @@ The XIAO can also run as a dedicated BLE advertisement scanner that prints a
 rolling device list over its USB serial connection. See the
 [Beacon Scanner Guide](docs/connectivity/beacon-scanner.md).
 
+A dedicated **DFRobot Beetle ESP32-C6 (DFR1117) Wi-Fi scanner** reports passive
+AP/device observations, signal strength, retries, and management events in USB
+log blocks. See the [Wi-Fi Scanner Guide](docs/connectivity/wifi-scanner.md)
+for channel lock, target-device tracking, and measurement limits.
+
 802.15.4/OpenThread, secure cloud connectivity, board-specific storage
 backends, and OTA remain planned.
 
