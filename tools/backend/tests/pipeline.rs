@@ -182,8 +182,19 @@ fn collection_is_atomic_persistent_and_queries_work() {
     std::fs::remove_file(path).unwrap();
 }
 
+fn scanner_query(panel: &serde_json::Value) -> String {
+    panel["targets"][0]["rawQueryText"]
+        .as_str()
+        .unwrap()
+        .replace("${device:sqlstring}", "'scanner-a'")
+        .replace("${channel:csv}", "1,6")
+        .replace("${__from}", "0")
+        .replace("${__to}", "100000")
+        .replace("${__interval_ms}", "1000")
+}
+
 #[test]
-fn scanner_dashboard_keeps_batched_channels_separate_and_explains_panels() {
+fn scanner_dashboard_uses_capture_time_and_weighted_channel_metrics() {
     let contract: Contract = serde_json::from_str(include_str!(
         "../../../firmware/dfrobot/beetle-esp32c6-wifi-scanner/telemetry.json"
     ))
@@ -198,86 +209,112 @@ fn scanner_dashboard_keeps_batched_channels_separate_and_explains_panels() {
             .as_nanos()
     ));
     let mut store = Store::open(&path).unwrap();
-    for (channel, frames) in [(1, 100), (6, 200)] {
+    for (channel, frames, observed_ms, data_frames, data_retries, received_ms) in [
+        (1, 100, 5_000, 20, 2, 70_000),
+        (6, 200, 5_000, 20, 2, 70_000),
+        (6, 100, 10_000, 10, 5, 70_000),
+    ] {
         let mut payload = contract.example.clone();
         payload["channel"] = json!(channel);
         payload["frames"] = json!(frames);
+        payload["observed_ms"] = json!(observed_ms);
+        payload["data_frames"] = json!(data_frames);
+        payload["data_retries"] = json!(data_retries);
+        payload["upload_uptime_ms"] = json!(65_000);
         assert!(
             store
                 .ingest(
                     &[contract.clone()],
                     "embedded-sdk/beetle-wifi-scan/v1/scanner-a/telemetry",
                     &serde_json::to_vec(&payload).unwrap(),
-                    5_000,
+                    received_ms,
                 )
                 .unwrap()
         );
     }
     let dashboard = dashboard(&contract);
     let panels = dashboard["panels"].as_array().unwrap();
-    assert_eq!(panels[0]["title"], "Recent scan windows");
-    assert_eq!(panels[0]["gridPos"]["w"], 24);
+    assert_eq!(panels.len(), 11);
+    assert_eq!(panels[0]["type"], "stat");
+    assert_eq!(panels[3]["title"], "Latest window on each receive channel");
+    assert_eq!(panels[3]["gridPos"]["w"], 24);
+    assert_eq!(panels.last().unwrap()["type"], "row");
+    assert_eq!(panels.last().unwrap()["collapsed"], true);
     assert!(
         panels
             .iter()
             .all(|panel| panel["description"].as_str().is_some_and(|s| !s.is_empty()))
     );
     let reader = Connection::open(&path).unwrap();
-    for panel in panels {
-        let query = panel["targets"][0]["rawQueryText"]
-            .as_str()
-            .unwrap()
-            .replace("${device:sqlstring}", "'scanner-a'")
-            .replace("${__from}", "0")
-            .replace("${__to}", "10000")
-            .replace("${__interval_ms}", "1000");
+    for panel in panels
+        .iter()
+        .chain(panels.last().unwrap()["panels"].as_array().unwrap())
+    {
+        if panel["type"] == "row" {
+            continue;
+        }
+        let query = scanner_query(panel);
         let mut statement = reader.prepare(&query).unwrap();
         statement.query([]).unwrap().next().unwrap();
     }
-    let frames_panel = panels
+    let overview = panels
         .iter()
-        .find(|panel| panel["title"] == "Captured frames per window")
+        .find(|panel| panel["title"] == "Latest window on each receive channel")
         .unwrap();
-    let query = frames_panel["targets"][0]["rawQueryText"]
-        .as_str()
+    let overview_rows: Vec<(i64, f64, String)> = reader
+        .prepare(&scanner_query(overview))
         .unwrap()
-        .replace("${device:sqlstring}", "'scanner-a'")
-        .replace("${__from}", "0")
-        .replace("${__to}", "10000")
-        .replace("${__interval_ms}", "1000");
-    let series: Vec<(String, f64)> = reader
-        .prepare(&query)
-        .unwrap()
-        .query_map([], |row| Ok((row.get(1)?, row.get(2)?)))
+        .query_map([], |row| Ok((row.get(2)?, row.get(3)?, row.get(12)?)))
         .unwrap()
         .map(Result::unwrap)
         .collect();
     assert_eq!(
-        series,
+        overview_rows,
         [
-            ("scanner-a ch 1".into(), 100.0),
-            ("scanner-a ch 6".into(), 200.0)
+            (1, 20.0, "estimated capture".into()),
+            (6, 10.0, "estimated capture".into())
         ]
     );
     let rate_panel = panels
         .iter()
         .find(|panel| panel["title"] == "Captured frames/s")
         .unwrap();
-    let query = rate_panel["targets"][0]["rawQueryText"]
-        .as_str()
+    let rates: Vec<(f64, String, f64)> = reader
+        .prepare(&scanner_query(rate_panel))
         .unwrap()
-        .replace("${device:sqlstring}", "'scanner-a'")
-        .replace("${__from}", "0")
-        .replace("${__to}", "10000")
-        .replace("${__interval_ms}", "1000");
-    let rates: Vec<f64> = reader
-        .prepare(&query)
-        .unwrap()
-        .query_map([], |row| row.get(2))
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
         .unwrap()
         .map(Result::unwrap)
         .collect();
-    assert_eq!(rates, [20.0, 40.0]);
+    assert_eq!(
+        rates,
+        [
+            (10.0, "scanner-a ch 1".into(), 20.0),
+            (10.0, "scanner-a ch 6".into(), 20.0)
+        ]
+    );
+    let retry_panel = panels
+        .iter()
+        .find(|panel| panel["title"] == "Observed data retry share")
+        .unwrap();
+    let retries: Vec<(String, f64)> = reader
+        .prepare(&scanner_query(retry_panel))
+        .unwrap()
+        .query_map([], |row| Ok((row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(retries.len(), 2);
+    assert!((retries[1].1 - 23.333333333).abs() < 0.0001);
+    let windows = &panels.last().unwrap()["panels"][0];
+    let capture_times: Vec<f64> = reader
+        .prepare(&scanner_query(windows))
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(capture_times, [10.0, 10.0, 10.0]);
     drop(reader);
     drop(store);
     std::fs::remove_file(path).unwrap();

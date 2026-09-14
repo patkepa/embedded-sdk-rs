@@ -73,9 +73,12 @@ def main():
         # The variable query must discover devices through the real plugin too.
         variables = query(dashboard["templating"]["list"][0]["query"])
         assert DEVICE in variables[0]["data"]["values"][0]
-        for panel in dashboard["panels"]:
+        panels = [child for panel in dashboard["panels"]
+                  for child in (panel.get("panels", []) if panel["type"] == "row" else [panel])]
+        for panel in panels:
             target = panel["targets"][0]
             sql = (target["rawQueryText"].replace("${device:sqlstring}", f"'{DEVICE}'")
+                   .replace("${channel:csv}", "1")
                    .replace("${__from}", str(int((time.time() - 3600) * 1000)))
                    .replace("${__to}", str(int((time.time() + 60) * 1000)))
                    .replace("${__interval_ms}", "1000"))

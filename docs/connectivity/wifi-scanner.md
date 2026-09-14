@@ -42,13 +42,21 @@ resumes; there is no persistent outbox. Open the **Beetle Wi-Fi scanner**
 dashboard in Grafana at <http://localhost:3000>. The backend timestamps receipt;
 scanner uptime remains a separate field. Only aggregate counts and signal values
 are published; SSIDs, BSSIDs, client MACs and event details stay in local logs.
-The dashboard starts with one row per recent scan window, then trends traffic,
-radio conditions and capture quality. Trend legends include the receive channel
-because a batched sweep can deliver several channels at almost the same time.
-Hover a panel's info icon for its measurement definition and limits; compare
-windows on the same channel and check observation duration before comparing
-frame counts. The captured-frames/s panel divides each window's frame count
-by its actual observation duration.
+The dashboard starts with reporting and capture-quality stats, followed by a
+latest-window table for the scanner's receive channels. Choose one scanner and
+one **Detail channel** to inspect frames/s, RSSI, retry share, traffic mix and
+processing issues. Expand **Raw diagnostics** for individual reports and JSON.
+The channel table's rows are each channel's latest report in the selected time
+range; they are not necessarily from one complete sweep. Frames/s uses actual
+observation duration. Retry share is shown only with at least 20 captured data
+frames and is not packet loss. Hover a panel's info icon for measurement limits.
+
+Each MQTT payload now includes `upload_uptime_ms` alongside the window's
+`uptime_ms`. Grafana estimates capture-end time as backend receipt time minus
+their difference, so a batch's 13 windows appear at their distinct observation
+times. MQTT transit delay remains an uncertainty. Older payloads without the
+new field still appear at backend receipt time and are labelled accordingly in
+the channel table and raw-window view.
 The local broker uses plaintext MQTT on a trusted development LAN. The Wi-Fi
 password is compiled into the firmware image when supplied at build time.
 If an SSID has several APs, `WIFI_BSSID=A22A6F4A51F6` selects a specific AP;

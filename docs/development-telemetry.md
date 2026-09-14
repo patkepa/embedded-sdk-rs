@@ -106,11 +106,12 @@ message; refresh the dashboard/time range to refresh the selector.
 - Metrics use JSON Pointer and must be finite JSON numbers. Missing optional
   fields are skipped, but explicit `null` or strings are rejected. Unknown JSON
   fields are preserved in the raw payload and otherwise ignored.
-- The collector timestamps arrival in UTC milliseconds. It does not interpret
-  device uptime as wall-clock time. Grafana displays local time.
-- Metric graphs average into Grafana's chosen time buckets; raw samples remain
-  available in SQLite. Units use Grafana unit IDs. Optional metric descriptions
-  appear in panel tooltips and should explain the measurement and its limits.
+- The collector timestamps arrival in UTC milliseconds. Generic dashboards use
+  that receipt time and average metrics into Grafana's chosen time buckets.
+  The scanner dashboard estimates capture time from each window's uptime and
+  its publish-time uptime; older scanner payloads fall back to receipt time.
+  Grafana displays local time. Raw samples remain available in SQLite. Units
+  use Grafana unit IDs, and panel tooltips explain measurement limits.
 - Give incompatible schemas a new contract ID and versioned topic. Old data
   remains until retention expires; keep the old contract registered if its
   dashboard must remain available.

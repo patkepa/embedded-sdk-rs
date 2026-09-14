@@ -7,7 +7,7 @@ use embassy_executor::Spawner;
 use embassy_net::{
     Config as NetworkConfig, IpAddress, IpEndpoint, Runner, StackResources, tcp::TcpSocket,
 };
-use embassy_time::{Duration, with_timeout};
+use embassy_time::{Duration, Instant, with_timeout};
 use embedded_sdk_mqtt::{
     BrokerHostname, BrokerPort, ClientId, Config as MqttConfig, QoS, TopicName,
 };
@@ -331,9 +331,32 @@ pub async fn upload(
             let Some(payload) = line.payload() else {
                 return false;
             };
+            // Anchor the window's uptime to this publish attempt. The backend can
+            // reconstruct an approximate capture time even though the 13 windows
+            // are delivered together after the sweep.
+            let Ok(payload) = core::str::from_utf8(payload) else {
+                return false;
+            };
+            let Some(prefix) = payload.strip_suffix('}') else {
+                return false;
+            };
+            let mut published = Line::new();
+            if write!(
+                published,
+                "{prefix},\"upload_uptime_ms\":{}}}",
+                Instant::now().as_millis()
+            )
+            .is_err()
+            {
+                return false;
+            }
             match with_timeout(
                 OPERATION_TIMEOUT,
-                connection.publish(&settings.topic, payload, QoS::AtMostOnce),
+                connection.publish(
+                    &settings.topic,
+                    published.as_str().as_bytes(),
+                    QoS::AtMostOnce,
+                ),
             )
             .await
             {
