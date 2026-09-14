@@ -57,6 +57,7 @@ their difference, so a batch's 13 windows appear at their distinct observation
 times. MQTT transit delay remains an uncertainty. Older payloads without the
 new field still appear at backend receipt time and are labelled accordingly in
 the channel table and raw-window view.
+
 The local broker uses plaintext MQTT on a trusted development LAN. The Wi-Fi
 password is compiled into the firmware image when supplied at build time.
 If an SSID has several APs, `WIFI_BSSID=A22A6F4A51F6` selects a specific AP;

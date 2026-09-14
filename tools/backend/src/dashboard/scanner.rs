@@ -124,7 +124,7 @@ pub(super) fn dashboard(contract: &Contract) -> Value {
         3,
         "Queue drops in range",
         "Sum of callback frames lost in the processing queue across accepted windows in the selected time range. Zero does not prove complete radio capture.",
-        format!("SELECT MAX(received_ms) / 1000.0 AS time, SUM(json_extract(payload, '$.queue_dropped')) AS drops FROM messages WHERE {scope} AND received_ms >= ${{__from}} AND received_ms < ${{__to}}"),
+        format!("{source} SELECT MAX(capture_ms) / 1000.0 AS time, SUM(queue_dropped) AS drops FROM scan WHERE {CAPTURE_RANGE}"),
         "short", 16,
     ));
 
@@ -138,17 +138,18 @@ pub(super) fn dashboard(contract: &Contract) -> Value {
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY device, channel ORDER BY capture_ms DESC, id DESC) AS rn
                 FROM scan WHERE {CAPTURE_RANGE}
             )
-            SELECT capture_ms / 1000.0 AS time, device, channel,
+            SELECT channel,
                 ROUND(frames * 1000.0 / MAX(1, observed_ms), 1) AS frames_per_s,
                 networks, active_radios, rssi_dbm,
                 CASE WHEN data_frames >= 20 THEN ROUND(data_retries * 100.0 / data_frames, 1) END AS retry_percent,
-                data_frames, ROUND((unixepoch('now') * 1000 - received_ms) / 1000.0, 0) AS report_age_s,
-                gap_ms, queue_dropped, time_basis
+                ROUND((unixepoch('now') * 1000 - received_ms) / 1000.0, 0) AS report_age_s,
+                time_basis
             FROM ranked WHERE rn = 1 ORDER BY device, channel"#
         ),
         "none",
     );
     place(&mut channels, 0, 4, 24, 11);
+    channels["targets"][0]["timeColumns"] = json!([]);
     channels["fieldConfig"]["overrides"] = json!([
         {"matcher":{"id":"byName","options":"frames_per_s"},"properties":[
             {"id":"displayName","value":"Frames/s"},
@@ -162,9 +163,7 @@ pub(super) fn dashboard(contract: &Contract) -> Value {
             {"id":"thresholds","value":{"mode":"absolute","steps":[
                 {"color":"green","value":null},{"color":"orange","value":20},{"color":"red","value":40}]}}]},
         {"matcher":{"id":"byName","options":"report_age_s"},"properties":[
-            {"id":"displayName","value":"Report age"},{"id":"unit","value":"s"}]},
-        {"matcher":{"id":"byName","options":"gap_ms"},"properties":[
-            {"id":"displayName","value":"Blind gap"},{"id":"unit","value":"ms"}]}
+            {"id":"displayName","value":"Report age"},{"id":"unit","value":"s"}]}
     ]);
     panels.push(channels);
 
@@ -264,7 +263,7 @@ pub(super) fn dashboard(contract: &Contract) -> Value {
                 "query": format!("SELECT DISTINCT device FROM messages WHERE contract = '{}' ORDER BY device", contract.id),
                 "refresh": 2, "multi": false, "includeAll": false, "current": {}, "options": []},
             {"name": "channel", "label": "Detail channel", "type": "query", "datasource": datasource(),
-                "query": format!("SELECT CAST(json_extract(payload, '$.channel') AS TEXT) AS __text, json_extract(payload, '$.channel') AS __value FROM messages WHERE contract = '{}' AND device IN (${{device:sqlstring}}) GROUP BY __value ORDER BY MAX(received_ms) DESC", contract.id),
+                "query": format!("SELECT CAST(json_extract(payload, '$.channel') AS TEXT) AS __text, CAST(json_extract(payload, '$.channel') AS TEXT) AS __value FROM messages WHERE contract = '{}' AND device IN (${{device:sqlstring}}) GROUP BY __value ORDER BY MAX(received_ms) DESC", contract.id),
                 "refresh": 2, "multi": false, "includeAll": false, "current": {}, "options": []}
         ]},
         "panels": panels

@@ -73,6 +73,13 @@ def main():
         # The variable query must discover devices through the real plugin too.
         variables = query(dashboard["templating"]["list"][0]["query"])
         assert DEVICE in variables[0]["data"]["values"][0]
+        if contract["id"] == "beetle-wifi-scan-v1":
+            channel_sql = dashboard["templating"]["list"][1]["query"].replace(
+                "${device:sqlstring}", f"'{DEVICE}'")
+            channel_values = query(channel_sql)[0]["data"]["values"]
+            assert "1" in channel_values[0], channel_values
+            assert any(panel["type"] == "row" and panel["collapsed"]
+                       for panel in dashboard["panels"])
         panels = [child for panel in dashboard["panels"]
                   for child in (panel.get("panels", []) if panel["type"] == "row" else [panel])]
         for panel in panels:

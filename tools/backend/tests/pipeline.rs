@@ -210,7 +210,7 @@ fn scanner_dashboard_uses_capture_time_and_weighted_channel_metrics() {
     ));
     let mut store = Store::open(&path).unwrap();
     for (channel, frames, observed_ms, data_frames, data_retries, received_ms) in [
-        (1, 100, 5_000, 20, 2, 70_000),
+        (1, 100, 5_000, 10, 1, 70_000),
         (6, 200, 5_000, 20, 2, 70_000),
         (6, 100, 10_000, 10, 5, 70_000),
     ] {
@@ -232,6 +232,18 @@ fn scanner_dashboard_uses_capture_time_and_weighted_channel_metrics() {
                 .unwrap()
         );
     }
+    let mut legacy = contract.example.clone();
+    legacy["channel"] = json!(11);
+    assert!(
+        store
+            .ingest(
+                &[contract.clone()],
+                "embedded-sdk/beetle-wifi-scan/v1/scanner-a/telemetry",
+                &serde_json::to_vec(&legacy).unwrap(),
+                50_000,
+            )
+            .unwrap()
+    );
     let dashboard = dashboard(&contract);
     let panels = dashboard["panels"].as_array().unwrap();
     assert_eq!(panels.len(), 11);
@@ -264,7 +276,7 @@ fn scanner_dashboard_uses_capture_time_and_weighted_channel_metrics() {
     let overview_rows: Vec<(i64, f64, String)> = reader
         .prepare(&scanner_query(overview))
         .unwrap()
-        .query_map([], |row| Ok((row.get(2)?, row.get(3)?, row.get(12)?)))
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(7)?)))
         .unwrap()
         .map(Result::unwrap)
         .collect();
@@ -272,7 +284,8 @@ fn scanner_dashboard_uses_capture_time_and_weighted_channel_metrics() {
         overview_rows,
         [
             (1, 20.0, "estimated capture".into()),
-            (6, 10.0, "estimated capture".into())
+            (6, 10.0, "estimated capture".into()),
+            (11, 20.0, "backend receipt".into())
         ]
     );
     let rate_panel = panels
@@ -297,7 +310,7 @@ fn scanner_dashboard_uses_capture_time_and_weighted_channel_metrics() {
         .iter()
         .find(|panel| panel["title"] == "Observed data retry share")
         .unwrap();
-    let retries: Vec<(String, f64)> = reader
+    let retries: Vec<(String, Option<f64>)> = reader
         .prepare(&scanner_query(retry_panel))
         .unwrap()
         .query_map([], |row| Ok((row.get(1)?, row.get(2)?)))
@@ -305,7 +318,8 @@ fn scanner_dashboard_uses_capture_time_and_weighted_channel_metrics() {
         .map(Result::unwrap)
         .collect();
     assert_eq!(retries.len(), 2);
-    assert!((retries[1].1 - 23.333333333).abs() < 0.0001);
+    assert_eq!(retries[0].1, None);
+    assert!((retries[1].1.unwrap() - 23.333333333).abs() < 0.0001);
     let windows = &panels.last().unwrap()["panels"][0];
     let capture_times: Vec<f64> = reader
         .prepare(&scanner_query(windows))
@@ -314,7 +328,7 @@ fn scanner_dashboard_uses_capture_time_and_weighted_channel_metrics() {
         .unwrap()
         .map(Result::unwrap)
         .collect();
-    assert_eq!(capture_times, [10.0, 10.0, 10.0]);
+    assert_eq!(capture_times, [50.0, 10.0, 10.0, 10.0]);
     drop(reader);
     drop(store);
     std::fs::remove_file(path).unwrap();
